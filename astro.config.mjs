@@ -38,12 +38,20 @@ function awsSdkBrowserRuntimePlugin() {
     name: 'aws-sdk-browser-runtime',
     enforce: 'pre',
     resolveId(id, importer) {
-      // Intercept the runtimeConfig import from within S3Client
-      if (id.includes('runtimeConfig') && !id.includes('.browser') && importer?.includes('@aws-sdk/client-s3')) {
-        return browserRuntimeConfigPath;
-      }
-      // Also handle the direct path being resolved
-      if (id === nodeRuntimeConfigPath || id === './runtimeConfig' && importer?.includes('@aws-sdk/client-s3')) {
+      // Only redirect the EXACT runtimeConfig entry point — not .shared, .browser, etc.
+      // Matching too broadly caused circular redirects (stack overflow).
+      const isExactRuntimeConfig =
+        id === './runtimeConfig' ||
+        id === nodeRuntimeConfigPath ||
+        id.endsWith('/runtimeConfig') ||
+        id.endsWith('/runtimeConfig.js');
+
+      const isNotAlreadyBrowser =
+        !id.includes('.browser') && !id.includes('.shared') && !id.includes('.native');
+
+      const isFromS3Client = importer?.includes('@aws-sdk/client-s3');
+
+      if (isExactRuntimeConfig && isNotAlreadyBrowser && isFromS3Client) {
         return browserRuntimeConfigPath;
       }
       return null;
