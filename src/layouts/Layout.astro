@@ -1,0 +1,906 @@
+---
+import { buildCollectionTree } from '../utils/db';
+import type { Collection } from '../utils/db';
+import '../styles/theme.css';
+
+interface Props {
+  title?: string;
+}
+
+const { title = 'PoraHobe - Notes & Study Material Platform' } = Astro.props;
+const user = Astro.locals.user;
+const db = Astro.locals.runtime?.env?.DB;
+
+let collections: Collection[] = [];
+if (db && user) {
+  try {
+    const { results } = await db
+      .prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY name ASC')
+      .bind(user.id)
+      .all<Collection>();
+    collections = buildCollectionTree(results);
+  } catch (e) {
+    console.error('Failed to load collections in layout:', e);
+  }
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#8b5cf6" />
+    <title>{title}</title>
+    
+    <!-- KaTeX CSS for math rendering -->
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css"
+      integrity="sha384-G7riwzT51190yf49dE3fmjQPg8HCYj21c+y1FC3PQTvT1zOfVbk5C9JY57PQILTX"
+      crossorigin="anonymous"
+    />
+
+    <!-- Pre-inject dark/light mode class to prevent flash of wrong background -->
+    <script is:inline>
+      const getTheme = () => {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('theme')) {
+          return localStorage.getItem('theme');
+        }
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      };
+      
+      const theme = getTheme();
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+
+      // Register PWA service worker
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .catch((err) => console.error('PWA service worker registration failed:', err));
+        });
+      }
+    </script>
+  </head>
+  <body>
+    <div class="app-layout">
+      {user && (
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-header">
+            <a href="/" class="logo">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m16 6 4 14H4L8 6z"></path>
+                <path d="M12 2v4"></path>
+              </svg>
+              <span>PoraHobe</span>
+            </a>
+            <button class="mobile-close" id="mobile-close-btn" aria-label="Close menu">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 6 6 18M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="user-profile">
+            <div class="avatar">{user.username[0].toUpperCase()}</div>
+            <div class="user-info">
+              <span class="username">{user.username}</span>
+              <span class="role">{user.role}</span>
+            </div>
+            <button id="logout-btn" title="Sign out" class="logout-btn">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"></path>
+              </svg>
+            </button>
+          </div>
+
+          <nav class="sidebar-nav">
+            <a href="/" class="nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="7" height="9" x="3" y="3" rx="1"></rect>
+                <rect width="7" height="5" x="14" y="3" rx="1"></rect>
+                <rect width="7" height="9" x="14" y="12" rx="1"></rect>
+                <rect width="7" height="5" x="3" y="16" rx="1"></rect>
+              </svg>
+              <span>Dashboard</span>
+            </a>
+            <a href="/notes" class="nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+              </svg>
+              <span>All Notes</span>
+            </a>
+            <a href="/notes?is_favorite=1" class="nav-item">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"></path>
+              </svg>
+              <span>Bookmarks</span>
+            </a>
+
+            <div class="nav-section-title">
+              <span>Folders</span>
+              <button class="add-folder-btn" id="create-folder-btn" title="Add Folder">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14M12 5v14"></path>
+                </svg>
+              </button>
+            </div>
+            
+            <div class="collections-tree" id="collections-tree">
+              {collections.length === 0 ? (
+                <div class="empty-tree">No folders created.</div>
+              ) : (
+                <ul class="tree-list">
+                  {collections.map((folder) => (
+                    <li class="tree-item" data-folder-id={folder.id}>
+                      <div class="tree-row">
+                        <span class="chevron-placeholder">
+                          {folder.children && folder.children.length > 0 ? (
+                            <svg class="tree-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="m9 18 6-6-6-6"></path>
+                            </svg>
+                          ) : (
+                            <span class="dot"></span>
+                          )}
+                        </span>
+                        <a href={`/notes?collection_id=${folder.id}`} class="folder-link">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+                          </svg>
+                          <span class="folder-name">{folder.name}</span>
+                        </a>
+                      </div>
+                      {folder.children && folder.children.length > 0 && (
+                        <ul class="nested-tree-list">
+                          {folder.children.map((child) => (
+                            <li class="tree-item" data-folder-id={child.id}>
+                              <div class="tree-row">
+                                <span class="dot"></span>
+                                <a href={`/notes?collection_id=${child.id}`} class="folder-link">
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+                                  </svg>
+                                  <span class="folder-name">{child.name}</span>
+                                </a>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </nav>
+
+          <div class="sidebar-footer">
+            <button class="footer-btn" id="theme-toggle-btn" title="Toggle Theme">
+              <svg class="sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4"></circle>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+              </svg>
+              <svg class="moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+              </svg>
+              <span>Appearance</span>
+            </button>
+            <button class="footer-btn" id="shortcuts-btn" title="Keyboard Shortcuts">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect width="20" height="12" x="2" y="6" rx="2"></rect>
+                <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M10 14h4"></path>
+              </svg>
+              <span>Shortcuts</span>
+            </button>
+          </div>
+        </aside>
+      )}
+
+      <div class="main-container">
+        {user && (
+          <header class="top-nav">
+            <button class="mobile-open" id="mobile-open-btn" aria-label="Open menu">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" x2="20" y1="12" y2="12"></line>
+                <line x1="4" x2="20" y1="6" y2="6"></line>
+                <line x1="4" x2="20" y1="18" y2="18"></line>
+              </svg>
+            </button>
+            
+            <div class="search-bar">
+              <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <input type="text" id="global-search" placeholder="Search notes, tags, or links... (Press '/')" autocomplete="off" />
+              <span class="kbd">/</span>
+            </div>
+
+            <div class="nav-actions">
+              <a href="/notes/new" class="btn btn-primary btn-new-note">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14M12 5v14"></path>
+                </svg>
+                <span>New Note</span>
+              </a>
+            </div>
+          </header>
+        )}
+        
+        <main class="main-content">
+          <slot />
+        </main>
+      </div>
+    </div>
+
+    <!-- Modal for shortcuts -->
+    <div id="shortcuts-modal" class="modal-overlay hidden">
+      <div class="modal-content bento-card">
+        <h3>Keyboard Shortcuts</h3>
+        <ul class="shortcuts-list">
+          <li><span class="kbd">/</span> Global Search focus</li>
+          <li><span class="kbd">N</span> Create a new note</li>
+          <li><span class="kbd">Esc</span> Close search/modals</li>
+          <li><span class="kbd">D</span> Go to dashboard</li>
+          <li><span class="kbd">A</span> View all notes</li>
+        </ul>
+        <button class="btn btn-secondary close-modal-btn" id="close-shortcuts-btn">Close</button>
+      </div>
+    </div>
+
+    <style>
+      .app-layout {
+        display: flex;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      /* Sidebar styling */
+      .sidebar {
+        width: 260px;
+        min-width: 260px;
+        height: 100%;
+        background: var(--bg-secondary);
+        border-right: 1px solid var(--card-border);
+        display: flex;
+        flex-direction: column;
+        z-index: 100;
+        transition: transform var(--transition-normal);
+      }
+
+      .sidebar-header {
+        padding: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        font-size: 1.25rem;
+        letter-spacing: -0.03em;
+        color: var(--accent-primary);
+      }
+
+      .logo svg {
+        color: var(--accent-primary);
+      }
+
+      .mobile-close {
+        display: none;
+        cursor: pointer;
+        color: var(--text-muted);
+      }
+
+      .user-profile {
+        margin: 0 16px 16px;
+        padding: 12px;
+        background: var(--card-bg);
+        border: 1px solid var(--card-border);
+        border-radius: var(--border-radius-md);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .avatar {
+        width: 36px;
+        height: 36px;
+        background: var(--accent-primary);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      .user-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .username {
+        font-weight: 500;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .role {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: capitalize;
+      }
+
+      .logout-btn {
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 4px;
+        border-radius: var(--border-radius-sm);
+        transition: color var(--transition-fast);
+      }
+
+      .logout-btn:hover {
+        color: var(--danger);
+      }
+
+      .sidebar-nav {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border-radius: var(--border-radius-md);
+        font-weight: 500;
+        font-size: 0.95rem;
+        color: var(--text-secondary);
+        transition: background var(--transition-fast), color var(--transition-fast);
+        cursor: pointer;
+      }
+
+      .nav-item:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+      }
+
+      .nav-section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 24px;
+        margin-bottom: 8px;
+        padding: 0 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .add-folder-btn {
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 2px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .add-folder-btn:hover {
+        color: var(--accent-primary);
+        background: var(--bg-tertiary);
+      }
+
+      /* Collapsible collections tree list */
+      .collections-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .empty-tree {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        padding: 8px 12px;
+        font-style: italic;
+      }
+
+      .tree-list, .nested-tree-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .nested-tree-list {
+        margin-left: 16px;
+        border-left: 1px dashed var(--card-border);
+        padding-left: 8px;
+        margin-top: 2px;
+      }
+
+      .tree-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 8px;
+        border-radius: var(--border-radius-sm);
+        transition: background var(--transition-fast);
+      }
+
+      .tree-row:hover {
+        background: var(--bg-tertiary);
+      }
+
+      .chevron-placeholder {
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: var(--text-muted);
+      }
+
+      .chevron-placeholder:hover {
+        color: var(--text-primary);
+      }
+
+      .tree-chevron {
+        transition: transform var(--transition-fast);
+      }
+
+      .tree-item.expanded > .tree-row .tree-chevron {
+        transform: rotate(90deg);
+      }
+
+      .tree-item:not(.expanded) > .nested-tree-list {
+        display: none;
+      }
+
+      .dot {
+        width: 4px;
+        height: 4px;
+        background: var(--text-muted);
+        border-radius: 50%;
+      }
+
+      .folder-link {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        font-weight: 500;
+        min-width: 0;
+      }
+
+      .folder-name {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .folder-link svg {
+        color: var(--text-muted);
+        flex-shrink: 0;
+      }
+
+      .sidebar-footer {
+        padding: 16px;
+        border-top: 1px solid var(--card-border);
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .footer-btn {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 12px;
+        width: 100%;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        font-weight: 500;
+        cursor: pointer;
+        border-radius: var(--border-radius-md);
+        transition: background var(--transition-fast), color var(--transition-fast);
+      }
+
+      .footer-btn:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+      }
+
+      .footer-btn .sun {
+        display: none;
+      }
+
+      :root.dark .footer-btn .sun {
+        display: block;
+      }
+
+      :root.dark .footer-btn .moon {
+        display: none;
+      }
+
+      /* Main container layout */
+      .main-container {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .top-nav {
+        height: 64px;
+        border-bottom: 1px solid var(--card-border);
+        padding: 0 32px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        background: var(--bg-primary);
+        z-index: 10;
+      }
+
+      .mobile-open {
+        display: none;
+        cursor: pointer;
+        color: var(--text-secondary);
+      }
+
+      .search-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--card-border);
+        border-radius: var(--border-radius-full);
+        padding: 8px 16px;
+        width: 320px;
+        transition: width var(--transition-normal), border-color var(--transition-fast);
+      }
+
+      .search-bar:focus-within {
+        width: 440px;
+        border-color: var(--accent-primary);
+      }
+
+      .search-icon {
+        color: var(--text-muted);
+      }
+
+      #global-search {
+        flex: 1;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+      }
+
+      #global-search::placeholder {
+        color: var(--text-muted);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        border-radius: var(--border-radius-full);
+        font-weight: 600;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: transform var(--transition-fast), background var(--transition-fast), box-shadow var(--transition-fast);
+      }
+
+      .btn-primary {
+        background: var(--accent-primary);
+        color: white;
+        box-shadow: 0 2px 4px rgba(139, 92, 246, 0.15);
+      }
+
+      .btn-primary:hover {
+        background: hsl(263, 80%, 45%);
+        box-shadow: 0 4px 8px rgba(139, 92, 246, 0.25);
+      }
+
+      .btn-secondary {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--card-border);
+        color: var(--text-secondary);
+      }
+
+      .btn-secondary:hover {
+        background: var(--card-border);
+        color: var(--text-primary);
+      }
+
+      .main-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 32px;
+        background: var(--bg-primary);
+      }
+
+      /* Modals design */
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        transition: opacity var(--transition-normal);
+      }
+
+      .modal-overlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .modal-content {
+        width: 420px;
+        max-width: 90%;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        animation: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+
+      @keyframes scaleUp {
+        from { transform: scale(0.95); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+
+      .modal-content h3 {
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+
+      .shortcuts-list {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .shortcuts-list li {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 0.95rem;
+        color: var(--text-secondary);
+      }
+
+      /* Mobile and Responsive Styles */
+      @media (max-width: 768px) {
+        .sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          bottom: 0;
+          transform: translateX(-100%);
+          box-shadow: var(--shadow-lg);
+        }
+
+        .sidebar.open {
+          transform: translateX(0);
+        }
+
+        .mobile-open {
+          display: block;
+        }
+
+        .mobile-close {
+          display: block;
+        }
+
+        .top-nav {
+          padding: 0 16px;
+        }
+
+        .search-bar {
+          width: 180px;
+        }
+
+        .search-bar:focus-within {
+          width: 240px;
+        }
+
+        .main-content {
+          padding: 16px;
+        }
+
+        .btn-new-note span {
+          display: none;
+        }
+        
+        .btn-new-note {
+          padding: 8px;
+        }
+      }
+    </style>
+
+    <!-- Client-side logic for layout interactions -->
+    <script>
+      // Theme toggler
+      const themeToggleBtn = document.getElementById('theme-toggle-btn');
+      if (themeToggleBtn) {
+        themeToggleBtn.addEventListener('click', () => {
+          const isDark = document.documentElement.classList.toggle('dark');
+          localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        });
+      }
+
+      // Logout handler
+      const logoutBtn = document.getElementById('logout-btn');
+      if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+          if (confirm('Are you sure you want to sign out?')) {
+            try {
+              const res = await fetch('/api/auth/logout', { method: 'POST' });
+              if (res.ok) {
+                window.location.href = '/login';
+              }
+            } catch (e) {
+              console.error('Logout error:', e);
+            }
+          }
+        });
+      }
+
+      // Collapsible folders trigger
+      const chevrons = document.querySelectorAll('.chevron-placeholder');
+      chevrons.forEach((chevron) => {
+        chevron.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const treeItem = chevron.closest('.tree-item');
+          if (treeItem) {
+            treeItem.classList.toggle('expanded');
+          }
+        });
+      });
+
+      // Add collection prompt
+      const addFolderBtn = document.getElementById('create-folder-btn');
+      if (addFolderBtn) {
+        addFolderBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const folderName = prompt('Enter new folder name:');
+          if (folderName && folderName.trim()) {
+            try {
+              const res = await fetch('/api/collections', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: folderName.trim() }),
+              });
+              if (res.ok) {
+                window.location.reload();
+              } else {
+                const data = await res.json();
+                alert(data.error || 'Failed to create folder');
+              }
+            } catch (err) {
+              console.error(err);
+            }
+          }
+        });
+      }
+
+      // Mobile sidebar toggle
+      const mobileOpenBtn = document.getElementById('mobile-open-btn');
+      const mobileCloseBtn = document.getElementById('mobile-close-btn');
+      const sidebar = document.getElementById('sidebar');
+
+      if (mobileOpenBtn && sidebar) {
+        mobileOpenBtn.addEventListener('click', () => sidebar.classList.add('open'));
+      }
+      if (mobileCloseBtn && sidebar) {
+        mobileCloseBtn.addEventListener('click', () => sidebar.classList.remove('open'));
+      }
+
+      // Shortcuts Modal toggle
+      const shortcutsBtn = document.getElementById('shortcuts-btn');
+      const shortcutsModal = document.getElementById('shortcuts-modal');
+      const closeShortcutsBtn = document.getElementById('close-shortcuts-btn');
+
+      if (shortcutsBtn && shortcutsModal) {
+        shortcutsBtn.addEventListener('click', () => shortcutsModal.classList.remove('hidden'));
+      }
+      if (closeShortcutsBtn && shortcutsModal) {
+        closeShortcutsBtn.addEventListener('click', () => shortcutsModal.classList.add('hidden'));
+      }
+      if (shortcutsModal) {
+        shortcutsModal.addEventListener('click', (e) => {
+          if (e.target === shortcutsModal) {
+            shortcutsModal.classList.add('hidden');
+          }
+        });
+      }
+
+      // Keyboard navigation
+      const globalSearch = document.getElementById('global-search') as HTMLInputElement;
+
+      window.addEventListener('keydown', (e) => {
+        // Focus search with '/'
+        if (e.key === '/' && document.activeElement !== globalSearch) {
+          e.preventDefault();
+          globalSearch?.focus();
+        }
+        
+        // Escape to blur search or close shortcuts modal
+        if (e.key === 'Escape') {
+          globalSearch?.blur();
+          shortcutsModal?.classList.add('hidden');
+        }
+
+        // Shortcut to new note (Shift + N or just 'n' if not in input)
+        if (e.key === 'n' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          window.location.href = '/notes/new';
+        }
+
+        // Go to dashboard (D)
+        if (e.key === 'd' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          window.location.href = '/';
+        }
+
+        // Go to all notes (A)
+        if (e.key === 'a' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          window.location.href = '/notes';
+        }
+      });
+
+      // Handle search triggers
+      if (globalSearch) {
+        globalSearch.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') {
+            const query = globalSearch.value.trim();
+            if (query) {
+              window.location.href = `/notes?search=${encodeURIComponent(query)}`;
+            } else {
+              window.location.href = `/notes`;
+            }
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
