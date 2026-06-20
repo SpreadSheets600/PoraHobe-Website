@@ -1,0 +1,330 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+// Check if invite-only mode is active
+const env = Astro.locals.runtime?.env || {};
+const inviteOnly = env.INVITE_ONLY === 'true';
+
+// Cloudflare Turnstile Site Key (falls back to the standard Cloudflare test key for local development)
+const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
+---
+
+<Layout title="Login - PoraHobe">
+  <div class="auth-wrapper">
+    <div class="auth-card bento-card animate-fade-in">
+      <div class="auth-header">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m16 6 4 14H4L8 6z"></path>
+          <path d="M12 2v4"></path>
+        </svg>
+        <h1>PoraHobe</h1>
+        <p>Private Notes & Study Material Platform</p>
+      </div>
+
+      <!-- Auth Tab Triggers -->
+      <div class="tab-triggers">
+        <button class="tab-trigger active" id="tab-login-btn">Login</button>
+        <button class="tab-trigger" id="tab-register-btn">Register</button>
+      </div>
+
+      <!-- Form Container -->
+      <div class="form-container">
+        <!-- Login Form -->
+        <form id="login-form" class="auth-form">
+          <div class="form-group">
+            <label for="login-username">Username</label>
+            <input type="text" id="login-username" name="username" placeholder="e.g., student" required />
+          </div>
+          
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" name="password" placeholder="••••••••" required />
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="auth-form hidden">
+          <div class="form-group">
+            <label for="register-username">Username</label>
+            <input type="text" id="register-username" name="username" placeholder="Min. 3 characters" required />
+          </div>
+          
+          <div class="form-group">
+            <label for="register-password">Password</label>
+            <input type="password" id="register-password" name="password" placeholder="Min. 6 characters" required />
+          </div>
+
+          {inviteOnly && (
+            <div class="form-group">
+              <label for="register-invite">Invite Code</label>
+              <input type="text" id="register-invite" name="inviteCode" placeholder="Enter private invite code" required />
+            </div>
+          )}
+
+          <!-- Turnstile Protection -->
+          <div class="turnstile-wrapper">
+            <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-theme="dark"></div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+        </form>
+      </div>
+
+      <!-- Feedback messages -->
+      <div id="error-message" class="alert alert-danger hidden"></div>
+      <div id="success-message" class="alert alert-success hidden"></div>
+    </div>
+  </div>
+
+  <!-- Turnstile script -->
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+  <style>
+    .auth-wrapper {
+      min-height: 100vh;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+      padding: 20px;
+    }
+
+    .auth-card {
+      width: 400px;
+      max-width: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      box-shadow: var(--shadow-lg), var(--shadow-glow);
+    }
+
+    .auth-header svg {
+      color: var(--accent-primary);
+      margin-bottom: 8px;
+    }
+
+    .auth-header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .auth-header p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .tab-triggers {
+      display: flex;
+      background: var(--bg-tertiary);
+      padding: 4px;
+      border-radius: var(--border-radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    .tab-trigger {
+      flex: 1;
+      padding: 8px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background var(--transition-fast), color var(--transition-fast);
+    }
+
+    .tab-trigger.active {
+      background: var(--card-bg);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      text-align: left;
+    }
+
+    .auth-form.hidden {
+      display: none;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .form-group input {
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      transition: border var(--transition-fast);
+    }
+
+    .form-group input:focus {
+      border-color: var(--accent-primary);
+    }
+
+    .btn-block {
+      width: 100%;
+      justify-content: center;
+      padding: 12px;
+    }
+
+    .turnstile-wrapper {
+      display: flex;
+      justify-content: center;
+      margin: 8px 0;
+    }
+
+    .alert {
+      padding: 12px;
+      border-radius: var(--border-radius-md);
+      font-size: 0.85rem;
+      text-align: left;
+    }
+
+    .alert-danger {
+      background: hsla(347, 77%, 50%, 0.15);
+      border: 1px solid hsla(347, 77%, 50%, 0.3);
+      color: var(--danger);
+    }
+
+    .alert-success {
+      background: hsla(142, 76%, 36%, 0.15);
+      border: 1px solid hsla(142, 76%, 36%, 0.3);
+      color: var(--success);
+    }
+
+    .alert.hidden {
+      display: none;
+    }
+  </style>
+
+  <script>
+    // Tab switching logic
+    const tabLoginBtn = document.getElementById('tab-login-btn');
+    const tabRegisterBtn = document.getElementById('tab-register-btn');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    
+    const errorAlert = document.getElementById('error-message');
+    const successAlert = document.getElementById('success-message');
+
+    const clearAlerts = () => {
+      errorAlert?.classList.add('hidden');
+      successAlert?.classList.add('hidden');
+    };
+
+    tabLoginBtn?.addEventListener('click', () => {
+      tabLoginBtn.classList.add('active');
+      tabRegisterBtn?.classList.remove('active');
+      loginForm?.classList.remove('hidden');
+      registerForm?.classList.add('hidden');
+      clearAlerts();
+    });
+
+    tabRegisterBtn?.addEventListener('click', () => {
+      tabRegisterBtn.classList.add('active');
+      tabLoginBtn?.classList.remove('active');
+      registerForm?.classList.remove('hidden');
+      loginForm?.classList.add('hidden');
+      clearAlerts();
+    });
+
+    // Form Submission: Login
+    loginForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAlerts();
+
+      const usernameInput = document.getElementById('login-username') as HTMLInputElement;
+      const passwordInput = document.getElementById('login-password') as HTMLInputElement;
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: usernameInput.value,
+            password: passwordInput.value,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          successAlert!.textContent = 'Signed in successfully! Redirecting...';
+          successAlert?.classList.remove('hidden');
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1000);
+        } else {
+          errorAlert!.textContent = data.error || 'Authentication failed';
+          errorAlert?.classList.remove('hidden');
+        }
+      } catch (err) {
+        console.error(err);
+        errorAlert!.textContent = 'An error occurred during sign in.';
+        errorAlert?.classList.remove('hidden');
+      }
+    });
+
+    // Form Submission: Register
+    registerForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      clearAlerts();
+
+      const usernameInput = document.getElementById('register-username') as HTMLInputElement;
+      const passwordInput = document.getElementById('register-password') as HTMLInputElement;
+      const inviteInput = document.getElementById('register-invite') as HTMLInputElement;
+      
+      // Get Turnstile token
+      const turnstileResponse = (registerForm.querySelector('[name="cf-turnstile-response"]') as HTMLInputElement)?.value;
+
+      try {
+        const res = await fetch('/api/auth/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: usernameInput.value,
+            password: passwordInput.value,
+            inviteCode: inviteInput?.value || undefined,
+            turnstileToken: turnstileResponse || undefined,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          successAlert!.textContent = 'Account created successfully! Redirecting...';
+          successAlert?.classList.remove('hidden');
+          setTimeout(() => {
+            window.location.href = '/';
+          }, 1000);
+        } else {
+          errorAlert!.textContent = data.error || 'Registration failed';
+          errorAlert?.classList.remove('hidden');
+        }
+      } catch (err) {
+        console.error(err);
+        errorAlert!.textContent = 'An error occurred during registration.';
+        errorAlert?.classList.remove('hidden');
+      }
+    });
+  </script>
+</Layout>

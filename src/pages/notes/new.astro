@@ -1,0 +1,538 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import type { Collection } from '../../utils/db';
+
+const user = Astro.locals.user;
+const db = Astro.locals.runtime?.env?.DB;
+
+if (!user || !db) {
+  return Astro.redirect('/login');
+}
+
+// Fetch user collections for dropdown
+let collections: Collection[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY name ASC')
+    .bind(user.id)
+    .all<Collection>();
+  collections = results;
+} catch (e) {
+  console.error('Failed to load collections in creator:', e);
+}
+
+// Fetch pre-existing categories & semesters to provide autocomplete lists
+let existingCategories: string[] = [];
+let existingSemesters: string[] = [];
+try {
+  const catRes = await db
+    .prepare('SELECT DISTINCT category FROM notes WHERE user_id = ? AND category IS NOT NULL AND category != ""')
+    .bind(user.id)
+    .all();
+  existingCategories = catRes.results.map((r: any) => r.category);
+
+  const semRes = await db
+    .prepare('SELECT DISTINCT semester FROM notes WHERE user_id = ? AND semester IS NOT NULL AND semester != ""')
+    .bind(user.id)
+    .all();
+  existingSemesters = semRes.results.map((r: any) => r.semester);
+} catch (e) {
+  console.error(e);
+}
+---
+
+<Layout title="New Note - PoraHobe">
+  <div class="creator-wrapper animate-fade-in">
+    <div class="creator-header">
+      <div class="header-left">
+        <a href="/notes" class="back-link">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" x2="5" y1="12" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span>All Notes</span>
+        </a>
+        <h2>New Study Material</h2>
+      </div>
+      <div class="header-right">
+        <button class="btn btn-secondary" id="preview-toggle-btn">Toggle Preview</button>
+        <button class="btn btn-primary" id="save-note-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>Save Note</span>
+        </button>
+      </div>
+    </div>
+
+    <form id="create-note-form" class="creator-form-layout">
+      <!-- Left side: editor inputs -->
+      <div class="editor-pane bento-card">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <input type="text" id="note-title" name="title" class="title-input" placeholder="Title your note..." required />
+          </div>
+        </div>
+
+        <div class="metadata-grid">
+          <!-- Folder select -->
+          <div class="form-group">
+            <label for="note-collection">Folder</label>
+            <select id="note-collection" name="collection_id">
+              <option value="">Root / None</option>
+              {collections.map((col) => (
+                <option value={col.id}>{col.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <!-- Category select/input -->
+          <div class="form-group">
+            <label for="note-category">Category</label>
+            <input type="text" id="note-category" name="category" placeholder="e.g., Computer Science" list="categories-list" required />
+            <datalist id="categories-list">
+              {existingCategories.map((cat) => <option value={cat} />)}
+            </datalist>
+          </div>
+
+          <!-- Semester -->
+          <div class="form-group">
+            <label for="note-semester">Semester</label>
+            <input type="text" id="note-semester" name="semester" placeholder="e.g., Semester 3" list="semesters-list" />
+            <datalist id="semesters-list">
+              {existingSemesters.map((sem) => <option value={sem} />)}
+            </datalist>
+          </div>
+
+          <!-- Topic -->
+          <div class="form-group">
+            <label for="note-topic">Topic</label>
+            <input type="text" id="note-topic" name="topic" placeholder="e.g., Data Structures" />
+          </div>
+
+          <!-- Comma tags -->
+          <div class="form-group col-span-2">
+            <label for="note-tags">Tags (comma separated)</label>
+            <input type="text" id="note-tags" name="tags" placeholder="e.g., algorithms, study, code" />
+          </div>
+
+          <div class="form-group checkbox-row">
+            <label class="toggle-switch">
+              <input type="checkbox" id="note-favorite" name="is_favorite" />
+              <span class="slider"></span>
+              <span class="toggle-label">Bookmark</span>
+            </label>
+
+            <label class="toggle-switch">
+              <input type="checkbox" id="note-pinned" name="is_pinned" />
+              <span class="slider"></span>
+              <span class="toggle-label">Pin to Dashboard</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Markdown editor area -->
+        <div class="form-group textarea-group">
+          <label class="sr-only" for="note-content">Note Content (Markdown supported)</label>
+          <textarea id="note-content" name="content" placeholder="Write rich notes here... Supports Markdown, LaTeX equations ($E=mc^2$), checklists, code blocks, etc. Paste YouTube and Google Drive links to automatically generate embeds/previews." class="content-textarea"></textarea>
+        </div>
+      </div>
+
+      <!-- Right side: live preview (split pane) -->
+      <div class="preview-pane bento-card hidden" id="preview-pane">
+        <h3 class="preview-title-header" id="preview-title">Note Preview</h3>
+        <div class="prose content-preview" id="preview-body">
+          <p class="preview-placeholder">Your markdown preview will render here...</p>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <style>
+    .creator-wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      height: calc(100vh - 120px);
+    }
+
+    .creator-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .header-left {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .back-link:hover {
+      color: var(--accent-primary);
+    }
+
+    .header-left h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .header-right {
+      display: flex;
+      gap: 12px;
+    }
+
+    /* Form and Split Screen */
+    .creator-form-layout {
+      display: flex;
+      gap: 20px;
+      flex: 1;
+      min-height: 0;
+      height: 100%;
+    }
+
+    .editor-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      min-width: 0;
+      height: 100%;
+      overflow-y: auto;
+    }
+
+    .preview-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+      height: 100%;
+      overflow-y: auto;
+      background: var(--bg-secondary);
+      border: 1px dashed var(--card-border);
+    }
+
+    .preview-pane.hidden {
+      display: none;
+    }
+
+    .preview-title-header {
+      font-size: 1.2rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
+      color: var(--accent-primary);
+    }
+
+    .content-preview {
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .preview-placeholder {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* Title Input */
+    .title-input {
+      font-size: 1.5rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+      width: 100%;
+      color: var(--text-primary);
+    }
+
+    .title-input::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* Metadata Grid */
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .metadata-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-group.col-span-2 {
+      grid-column: span 2;
+    }
+
+    .form-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-group input, .form-group select {
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--accent-primary);
+    }
+
+    /* Textarea styling */
+    .textarea-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 250px;
+    }
+
+    .content-textarea {
+      flex: 1;
+      resize: none;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 16px;
+      color: var(--text-primary);
+    }
+
+    .content-textarea:focus {
+      border-color: var(--accent-primary);
+    }
+
+    /* Toggle switches */
+    .checkbox-row {
+      grid-column: span 2;
+      flex-direction: row;
+      align-items: center;
+      gap: 24px;
+      height: 100%;
+      padding-top: 20px;
+    }
+
+    .toggle-switch {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+      position: absolute;
+    }
+
+    .slider {
+      position: relative;
+      width: 36px;
+      height: 20px;
+      background-color: var(--bg-tertiary);
+      border: 1px solid var(--card-border);
+      transition: .3s;
+      border-radius: 20px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 12px;
+      width: 12px;
+      left: 3px;
+      bottom: 3px;
+      background-color: var(--text-muted);
+      transition: .3s;
+      border-radius: 50%;
+    }
+
+    .toggle-switch input:checked + .slider {
+      background-color: var(--accent-primary);
+    }
+
+    .toggle-switch input:checked + .slider:before {
+      transform: translateX(16px);
+      background-color: white;
+    }
+
+    .toggle-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+
+    .flex-1 {
+      flex: 1;
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+
+  <!-- Marked and KaTeX via CDN for live preview parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" is:inline></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" is:inline></script>
+  
+  <script>
+    // Preview toggle
+    const previewToggleBtn = document.getElementById('preview-toggle-btn');
+    const previewPane = document.getElementById('preview-pane');
+    
+    previewToggleBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      previewPane?.classList.toggle('hidden');
+    });
+
+    // Content Editor Live Markdown & Math rendering
+    const noteContent = document.getElementById('note-content') as HTMLTextAreaElement;
+    const noteTitle = document.getElementById('note-title') as HTMLInputElement;
+    const previewBody = document.getElementById('preview-body');
+    const previewTitle = document.getElementById('preview-title');
+
+    const updatePreview = () => {
+      if (!previewBody) return;
+      
+      const title = noteTitle.value.trim() || 'Note Preview';
+      previewTitle!.textContent = title;
+
+      const markdownText = noteContent.value;
+      if (!markdownText.trim()) {
+        previewBody.innerHTML = '<p class="preview-placeholder">Your markdown preview will render here...</p>';
+        return;
+      }
+
+      // 1. Render marked markdown
+      // @ts-ignore
+      let html = typeof marked !== 'undefined' ? marked.parse(markdownText) : markdownText;
+
+      // 2. Simple LaTeX Math parsing
+      // Search for $$equation$$ and replace with KaTeX rendered HTML
+      html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match: string, equation: string) => {
+        try {
+          // @ts-ignore
+          return `<div class="math-display">${katex.renderToString(equation, { displayMode: true, throwOnError: false })}</div>`;
+        } catch (e) {
+          return match;
+        }
+      });
+
+      // Search for $equation$ and replace with inline KaTeX HTML
+      html = html.replace(/\$([^$\n]+?)\$/g, (match: string, equation: string) => {
+        try {
+          // @ts-ignore
+          return `<span class="math-inline">${katex.renderToString(equation, { displayMode: false, throwOnError: false })}</span>`;
+        } catch (e) {
+          return match;
+        }
+      });
+
+      previewBody.innerHTML = html;
+    };
+
+    noteContent?.addEventListener('input', updatePreview);
+    noteTitle?.addEventListener('input', updatePreview);
+
+    // Save Note logic
+    const saveNoteBtn = document.getElementById('save-note-btn');
+    saveNoteBtn?.addEventListener('click', async (e) => {
+      e.preventDefault();
+
+      const title = noteTitle.value.trim();
+      const content = noteContent.value;
+      const collectionId = (document.getElementById('note-collection') as HTMLSelectElement).value || null;
+      const category = (document.getElementById('note-category') as HTMLInputElement).value.trim();
+      const semester = (document.getElementById('note-semester') as HTMLInputElement).value.trim();
+      const topic = (document.getElementById('note-topic') as HTMLInputElement).value.trim();
+      const tagsString = (document.getElementById('note-tags') as HTMLInputElement).value;
+      const isFavorite = (document.getElementById('note-favorite') as HTMLInputElement).checked;
+      const isPinned = (document.getElementById('note-pinned') as HTMLInputElement).checked;
+
+      if (!title) {
+        alert('Please enter a note title.');
+        return;
+      }
+
+      // Convert tags
+      const tags = tagsString
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      try {
+        saveNoteBtn.setAttribute('disabled', 'true');
+        const spanText = saveNoteBtn.querySelector('span');
+        if (spanText) spanText.textContent = 'Saving...';
+
+        const res = await fetch('/api/notes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            content,
+            collection_id: collectionId,
+            category,
+            semester,
+            topic,
+            is_favorite: isFavorite,
+            is_pinned: isPinned,
+            tags,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          window.location.href = `/notes/${data.id}`;
+        } else {
+          alert(data.error || 'Failed to save note');
+          saveNoteBtn.removeAttribute('disabled');
+          if (spanText) spanText.textContent = 'Save Note';
+        }
+      } catch (err) {
+        console.error(err);
+        alert('An error occurred while saving.');
+        saveNoteBtn.removeAttribute('disabled');
+      }
+    });
+  </script>
+</Layout>

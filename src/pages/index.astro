@@ -1,0 +1,800 @@
+---
+import Layout from '../layouts/Layout.astro';
+import type { Note, LinkItem, ActivityLog } from '../utils/db';
+
+const user = Astro.locals.user;
+const db = Astro.locals.runtime?.env?.DB;
+
+if (!user || !db) {
+  return Astro.redirect('/login');
+}
+
+// 1. Fetch Stats
+const stats = {
+  totalNotes: 0,
+  pinnedNotes: 0,
+  favoriteNotes: 0,
+  storageUsedBytes: 0,
+};
+
+try {
+  const notesCount: any = await db
+    .prepare('SELECT COUNT(id) as count FROM notes WHERE user_id = ?')
+    .bind(user.id)
+    .first();
+  stats.totalNotes = notesCount?.count || 0;
+
+  const pinnedCount: any = await db
+    .prepare('SELECT COUNT(id) as count FROM notes WHERE user_id = ? AND is_pinned = 1')
+    .bind(user.id)
+    .first();
+  stats.pinnedNotes = pinnedCount?.count || 0;
+
+  const favoriteCount: any = await db
+    .prepare('SELECT COUNT(id) as count FROM notes WHERE user_id = ? AND is_favorite = 1')
+    .bind(user.id)
+    .first();
+  stats.favoriteNotes = favoriteCount?.count || 0;
+
+  const sizeSum: any = await db
+    .prepare(
+      'SELECT SUM(file_size) as total_size FROM attachments a JOIN notes n ON a.note_id = n.id WHERE n.user_id = ?'
+    )
+    .bind(user.id)
+    .first();
+  stats.storageUsedBytes = sizeSum?.total_size || 0;
+} catch (e) {
+  console.error('Failed to load stats:', e);
+}
+
+// Format storage size helper
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+// 2. Fetch Recent Notes
+let recentNotes: Note[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC LIMIT 4')
+    .bind(user.id)
+    .all<Note>();
+  recentNotes = results;
+} catch (e) {
+  console.error('Failed to load recent notes:', e);
+}
+
+// 3. Fetch Pinned Notes
+let pinnedNotes: Note[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT * FROM notes WHERE user_id = ? AND is_pinned = 1 ORDER BY updated_at DESC LIMIT 4')
+    .bind(user.id)
+    .all<Note>();
+  pinnedNotes = results;
+} catch (e) {
+  console.error('Failed to load pinned notes:', e);
+}
+
+// 4. Fetch Favorite Notes
+let favoriteNotes: Note[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT * FROM notes WHERE user_id = ? AND is_favorite = 1 ORDER BY updated_at DESC LIMIT 4')
+    .bind(user.id)
+    .all<Note>();
+  favoriteNotes = results;
+} catch (e) {
+  console.error('Failed to load favorite notes:', e);
+}
+
+// 5. Fetch YouTube Videos with Watch Progress
+let watchProgressVideos: (LinkItem & { note_title: string })[] = [];
+try {
+  const { results } = await db
+    .prepare(
+      `SELECT l.*, n.title as note_title 
+       FROM links l 
+       JOIN notes n ON l.note_id = n.id 
+       WHERE n.user_id = ? AND l.type = 'youtube' AND l.watch_progress > 0 
+       ORDER BY l.created_at DESC LIMIT 4`
+    )
+    .bind(user.id)
+    .all<LinkItem & { note_title: string }>();
+  watchProgressVideos = results;
+} catch (e) {
+  console.error('Failed to load videos:', e);
+}
+
+// 6. Fetch Recent Activity Logs
+let activityLogs: ActivityLog[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT * FROM activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 5')
+    .bind(user.id)
+    .all<ActivityLog>();
+  activityLogs = results;
+} catch (e) {
+  console.error('Failed to load activity logs:', e);
+}
+
+// 7. Fetch Top Tags
+let topTags: { name: string; count: number }[] = [];
+try {
+  const { results } = await db
+    .prepare(
+      `SELECT t.name, COUNT(nt.note_id) as count 
+       FROM tags t 
+       JOIN note_tags nt ON t.id = nt.tag_id 
+       JOIN notes n ON nt.note_id = n.id 
+       WHERE n.user_id = ? 
+       GROUP BY t.name 
+       ORDER BY count DESC LIMIT 8`
+    )
+    .bind(user.id)
+    .all<{ name: string; count: number }>();
+  topTags = results;
+} catch (e) {
+  console.error('Failed to load tags:', e);
+}
+---
+
+<Layout title="Dashboard - PoraHobe">
+  <div class="dashboard-wrapper animate-fade-in">
+    <!-- Welcome banner -->
+    <div class="welcome-banner bento-card">
+      <div class="welcome-text">
+        <h2>Welcome back, {user.username}! ✨</h2>
+        <p>Your workspace is synced and ready. Here is a summary of your study materials and notes.</p>
+      </div>
+      <div class="quick-actions">
+        <a href="/notes/new" class="quick-action-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M12 5v14"></path>
+          </svg>
+          <span>New Note</span>
+        </a>
+        <button class="quick-action-btn" id="dash-create-folder-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
+          </svg>
+          <span>New Folder</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="bento-grid">
+      <!-- Stats Widget -->
+      <div class="bento-card col-span-4 stat-card">
+        <h3>Storage & Stats</h3>
+        <div class="stats-list">
+          <div class="stat-item">
+            <span class="stat-label">Total Notes</span>
+            <span class="stat-value">{stats.totalNotes}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Pinned Notes</span>
+            <span class="stat-value">{stats.pinnedNotes}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">Favorites</span>
+            <span class="stat-value">{stats.favoriteNotes}</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-label">R2 Storage</span>
+            <span class="stat-value">{formatBytes(stats.storageUsedBytes)}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pinned Notes -->
+      <div class="bento-card col-span-8">
+        <div class="card-header">
+          <h3>Pinned Resources</h3>
+          <a href="/notes?is_pinned=1" class="view-all-link">View all</a>
+        </div>
+        {pinnedNotes.length === 0 ? (
+          <div class="empty-state">No pinned notes yet. Pin notes to keep them handy here.</div>
+        ) : (
+          <div class="notes-grid">
+            {pinnedNotes.map((note) => (
+              <a href={`/notes/${note.id}`} class="note-mini-card">
+                <span class="pin-icon">📌</span>
+                <span class="note-title">{note.title}</span>
+                <span class="note-meta">{note.category || 'General'} • {note.semester || 'All'}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <!-- Recent Notes -->
+      <div class="bento-card col-span-6">
+        <div class="card-header">
+          <h3>Recent Notes</h3>
+          <a href="/notes" class="view-all-link">View all</a>
+        </div>
+        {recentNotes.length === 0 ? (
+          <div class="empty-state">No notes found. Create your first note to get started!</div>
+        ) : (
+          <ul class="item-list">
+            {recentNotes.map((note) => (
+              <li>
+                <a href={`/notes/${note.id}`} class="list-item-link">
+                  <div class="item-title-wrapper">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+                      <polyline points="14 2 14 8 20 8"></polyline>
+                    </svg>
+                    <span class="item-title">{note.title}</span>
+                  </div>
+                  <span class="item-time">{new Date(note.updated_at).toLocaleDateString()}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <!-- Favorite Materials -->
+      <div class="bento-card col-span-6">
+        <div class="card-header">
+          <h3>Favorite Materials</h3>
+          <a href="/notes?is_favorite=1" class="view-all-link">View all</a>
+        </div>
+        {favoriteNotes.length === 0 ? (
+          <div class="empty-state">No favorites marked. Click the bookmark star inside a note.</div>
+        ) : (
+          <ul class="item-list">
+            {favoriteNotes.map((note) => (
+              <li>
+                <a href={`/notes/${note.id}`} class="list-item-link">
+                  <div class="item-title-wrapper">
+                    <span class="fav-star">★</span>
+                    <span class="item-title">{note.title}</span>
+                  </div>
+                  <span class="item-tag">{note.category || 'General'}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <!-- Recently Watched Videos -->
+      <div class="bento-card col-span-6">
+        <h3>Recently Watched Videos</h3>
+        {watchProgressVideos.length === 0 ? (
+          <div class="empty-state">No video watch progress found. Embed YouTube videos inside notes.</div>
+        ) : (
+          <div class="video-progress-grid">
+            {watchProgressVideos.map((video) => {
+              // Extract video ID from thumbnail
+              const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
+              // Format progress
+              const mins = Math.floor(video.watch_progress / 60);
+              const secs = video.watch_progress % 60;
+              const formattedProgress = `${mins}m ${secs}s`;
+
+              return (
+                <a href={`/notes/${video.note_id}`} class="video-mini-card">
+                  <div class="video-thumb">
+                    {video.thumbnail_url ? (
+                      <img src={video.thumbnail_url} alt={video.title || 'Video'} loading="lazy" />
+                    ) : (
+                      <div class="thumb-fallback">▶</div>
+                    )}
+                    <span class="progress-badge">{formattedProgress}</span>
+                  </div>
+                  <div class="video-info">
+                    <span class="video-title">{video.title || 'YouTube Video'}</span>
+                    <span class="video-note">In: {video.note_title}</span>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <!-- Activity Timeline -->
+      <div class="bento-card col-span-6">
+        <h3>Activity Timeline</h3>
+        {activityLogs.length === 0 ? (
+          <div class="empty-state">No logs recorded. Activity shows up as you interact.</div>
+        ) : (
+          <div class="timeline">
+            {activityLogs.map((log) => {
+              // Time diff
+              const diffMs = Date.now() - log.created_at;
+              const diffMins = Math.floor(diffMs / 60000);
+              let timeStr = 'just now';
+              if (diffMins > 0 && diffMins < 60) {
+                timeStr = `${diffMins}m ago`;
+              } else if (diffMins >= 60 && diffMins < 1440) {
+                timeStr = `${Math.floor(diffMins / 60)}h ago`;
+              } else if (diffMins >= 1440) {
+                timeStr = `${Math.floor(diffMins / 1440)}d ago`;
+              }
+
+              // Simple icon based on action
+              let icon = '⚡';
+              if (log.action.includes('note')) icon = '📝';
+              if (log.action.includes('collection')) icon = '📁';
+              if (log.action.includes('file')) icon = '📎';
+              if (log.action.includes('login')) icon = '🔑';
+
+              return (
+                <div class="timeline-item">
+                  <span class="timeline-icon">{icon}</span>
+                  <div class="timeline-content">
+                    <p class="timeline-text">{log.details}</p>
+                    <span class="timeline-time">{timeStr}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <!-- Trending/Used Tags -->
+      <div class="bento-card col-span-12">
+        <h3>Workspace Tags</h3>
+        {topTags.length === 0 ? (
+          <div class="empty-state">No tags created. Add tags when editing notes to categorize.</div>
+        ) : (
+          <div class="tags-cloud">
+            {topTags.map((tag) => (
+              <a href={`/notes?tag=${encodeURIComponent(tag.name)}`} class="tag-badge">
+                <span class="tag-hash">#</span>
+                <span class="tag-name">{tag.name}</span>
+                <span class="tag-count">{tag.count}</span>
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  <style>
+    .dashboard-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .welcome-banner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: radial-gradient(circle at right, var(--accent-glow) 0%, var(--card-bg) 100%);
+      padding: 32px;
+    }
+
+    .welcome-text h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .welcome-text p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .quick-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .quick-action-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-primary);
+      transition: background var(--transition-fast), border var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .quick-action-btn:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+
+    /* Bento Column Spanning classes */
+    .col-span-4 { grid-column: span 4; }
+    .col-span-6 { grid-column: span 6; }
+    .col-span-8 { grid-column: span 8; }
+    .col-span-12 { grid-column: span 12; }
+
+    @media (max-width: 1024px) {
+      .col-span-4 { grid-column: span 6; }
+      .col-span-8 { grid-column: span 6; }
+      .col-span-6 { grid-column: span 6; }
+      .col-span-12 { grid-column: span 6; }
+    }
+
+    /* Stats widget */
+    .stats-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: var(--bg-secondary);
+      padding: 14px;
+      border-radius: var(--border-radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    /* Card Header */
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .view-all-link {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--accent-primary);
+      transition: opacity var(--transition-fast);
+    }
+
+    .view-all-link:hover {
+      opacity: 0.8;
+    }
+
+    /* Pinned grid */
+    .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .notes-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .note-mini-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .note-mini-card:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--accent-primary);
+    }
+
+    .pin-icon {
+      font-size: 0.9rem;
+    }
+
+    .note-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .note-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Item List styling */
+    .item-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .list-item-link {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      border-radius: var(--border-radius-md);
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .list-item-link:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--accent-primary);
+    }
+
+    .item-title-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-secondary);
+    }
+
+    .list-item-link:hover .item-title-wrapper {
+      color: var(--text-primary);
+    }
+
+    .item-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 220px;
+    }
+
+    .item-time, .item-tag {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .fav-star {
+      color: var(--warning);
+      font-size: 1rem;
+    }
+
+    /* Video progress widget */
+    .video-progress-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .video-progress-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .video-mini-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 12px;
+      transition: border-color var(--transition-fast);
+    }
+
+    .video-mini-card:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .video-thumb {
+      position: relative;
+      aspect-ratio: 16/9;
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg-tertiary);
+    }
+
+    .video-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .thumb-fallback {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+    }
+
+    .progress-badge {
+      position: absolute;
+      bottom: 6px;
+      right: 6px;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      color: white;
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .video-info {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .video-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .video-note {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Timeline widget */
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .timeline-item {
+      display: flex;
+      gap: 12px;
+    }
+
+    .timeline-icon {
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .timeline-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .timeline-text {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    .timeline-time {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Tags Cloud */
+    .tags-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tag-badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      padding: 6px 12px;
+      border-radius: var(--border-radius-full);
+      font-size: 0.85rem;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .tag-badge:hover {
+      background: var(--bg-tertiary);
+      border-color: var(--accent-primary);
+    }
+
+    .tag-hash {
+      color: var(--text-muted);
+    }
+
+    .tag-name {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .tag-badge:hover .tag-name {
+      color: var(--text-primary);
+    }
+
+    .tag-count {
+      background: var(--bg-tertiary);
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      padding: 1px 5px;
+      border-radius: var(--border-radius-full);
+      font-weight: 600;
+    }
+
+    .empty-state {
+      padding: 24px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-style: italic;
+      background: var(--bg-secondary);
+      border: 1px dashed var(--card-border);
+      border-radius: var(--border-radius-md);
+    }
+  </style>
+
+  <script>
+    // Create folder trigger from dashboard
+    const dashFolderBtn = document.getElementById('dash-create-folder-btn');
+    if (dashFolderBtn) {
+      dashFolderBtn.addEventListener('click', async () => {
+        const name = prompt('Enter new folder name:');
+        if (name && name.trim()) {
+          try {
+            const res = await fetch('/api/collections', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: name.trim() }),
+            });
+            if (res.ok) {
+              window.location.reload();
+            } else {
+              const data = await res.json();
+              alert(data.error || 'Failed to create folder');
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      });
+    }
+  </script>
+</Layout>

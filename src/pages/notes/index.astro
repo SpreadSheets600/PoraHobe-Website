@@ -1,0 +1,509 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import type { Note } from '../../utils/db';
+
+const user = Astro.locals.user;
+const db = Astro.locals.runtime?.env?.DB;
+
+if (!user || !db) {
+  return Astro.redirect('/login');
+}
+
+// Extract search parameters
+const url = Astro.url;
+const search = url.searchParams.get('search') || '';
+const collectionId = url.searchParams.get('collection_id') || '';
+const tag = url.searchParams.get('tag') || '';
+const categoryFilter = url.searchParams.get('category') || '';
+const semesterFilter = url.searchParams.get('semester') || '';
+const isFavorite = url.searchParams.get('is_favorite') === '1';
+const isPinned = url.searchParams.get('is_pinned') === '1';
+const sort = url.searchParams.get('sort') || 'updated_desc';
+
+// 1. Fetch Distinct Categories & Semesters for Filters
+let categories: string[] = [];
+let semesters: string[] = [];
+try {
+  const catRes = await db
+    .prepare('SELECT DISTINCT category FROM notes WHERE user_id = ? AND category IS NOT NULL AND category != ""')
+    .bind(user.id)
+    .all();
+  categories = catRes.results.map((r: any) => r.category);
+
+  const semRes = await db
+    .prepare('SELECT DISTINCT semester FROM notes WHERE user_id = ? AND semester IS NOT NULL AND semester != ""')
+    .bind(user.id)
+    .all();
+  semesters = semRes.results.map((r: any) => r.semester);
+} catch (e) {
+  console.error('Failed to load filter items:', e);
+}
+
+// 2. Build Notes Query
+let query = `
+  SELECT n.*, c.name as collection_name,
+  (SELECT group_concat(t.name) FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tags
+  FROM notes n
+  LEFT JOIN collections c ON n.collection_id = c.id
+  WHERE n.user_id = ?
+`;
+const params: any[] = [user.id];
+
+if (collectionId) {
+  if (collectionId === 'root') {
+    query += ' AND n.collection_id IS NULL';
+  } else {
+    query += ' AND n.collection_id = ?';
+    params.push(collectionId);
+  }
+}
+
+if (search) {
+  query += ' AND (n.title LIKE ? OR n.content LIKE ?)';
+  params.push(`%${search}%`, `%${search}%`);
+}
+
+if (tag) {
+  query += ` AND n.id IN (
+    SELECT nt.note_id FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE t.name = ?
+  )`;
+  params.push(tag.toLowerCase());
+}
+
+if (categoryFilter) {
+  query += ' AND n.category = ?';
+  params.push(categoryFilter);
+}
+
+if (semesterFilter) {
+  query += ' AND n.semester = ?';
+  params.push(semesterFilter);
+}
+
+if (isFavorite) {
+  query += ' AND n.is_favorite = 1';
+}
+
+if (isPinned) {
+  query += ' AND n.is_pinned = 1';
+}
+
+// Apply Sort
+if (sort === 'updated_desc') {
+  query += ' ORDER BY n.is_pinned DESC, n.updated_at DESC';
+} else if (sort === 'updated_asc') {
+  query += ' ORDER BY n.updated_at ASC';
+} else if (sort === 'title_asc') {
+  query += ' ORDER BY n.title ASC';
+} else if (sort === 'title_desc') {
+  query += ' ORDER BY n.title DESC';
+} else if (sort === 'created_desc') {
+  query += ' ORDER BY n.created_at DESC';
+}
+
+let notes: any[] = [];
+try {
+  const { results } = await db.prepare(query).bind(...params).all();
+  notes = results.map((r: any) => ({
+    ...r,
+    tags: r.tags ? r.tags.split(',') : [],
+    is_favorite: !!r.is_favorite,
+    is_pinned: !!r.is_pinned,
+  }));
+} catch (e) {
+  console.error('Failed to load notes list:', e);
+}
+
+// Fetch current collection details if collectionId is set
+let currentCollectionName = '';
+if (collectionId && collectionId !== 'root') {
+  try {
+    const col: any = await db
+      .prepare('SELECT name FROM collections WHERE id = ? AND user_id = ?')
+      .bind(collectionId, user.id)
+      .first();
+    currentCollectionName = col?.name || '';
+  } catch (e) {
+    console.error('Failed to load collection details:', e);
+  }
+}
+
+// Snippet builder helper (removes markdown to make it a clean snippet)
+const getCleanSnippet = (content: string) => {
+  const clean = content
+    .replace(/[#*`_\[\]]/g, '') // remove markdown structures
+    .replace(/\$\$[\s\S]*?\$\$/g, '') // remove display math
+    .replace(/\$[\s\S]*?\$/g, '') // remove inline math
+    .replace(/\\/g, '')
+    .trim();
+  return clean.slice(0, 120) + (clean.length > 120 ? '...' : '');
+};
+---
+
+<Layout title="Notes Archive - PoraHobe">
+  <div class="archive-wrapper animate-fade-in">
+    <div class="archive-header">
+      <div class="header-title">
+        <h2>
+          {collectionId && currentCollectionName ? `Folder: ${currentCollectionName}` : 'All Study Material'}
+          {tag && ` #${tag}`}
+          {isFavorite && ' ★ Bookmarks'}
+          {isPinned && ' 📌 Pinned'}
+        </h2>
+        <p class="notes-count">{notes.length} resource{notes.length === 1 ? '' : 's'} found</p>
+      </div>
+
+      <div class="header-filters bento-card">
+        <!-- Search filter -->
+        <div class="filter-group">
+          <label>Search text</label>
+          <input type="text" id="filter-search" value={search} placeholder="Filter titles & body..." />
+        </div>
+
+        <!-- Category Filter -->
+        <div class="filter-group">
+          <label>Category</label>
+          <select id="filter-category">
+            <option value="">All Categories</option>
+            {categories.map((cat) => (
+              <option value={cat} selected={cat === categoryFilter}>{cat}</option>
+            ))}
+          </select>
+        </div>
+
+        <!-- Semester Filter -->
+        <div class="filter-group">
+          <label>Semester</label>
+          <select id="filter-semester">
+            <option value="">All Semesters</option>
+            {semesters.map((sem) => (
+              <option value={sem} selected={sem === semesterFilter}>{sem}</option>
+            ))}
+          </select>
+        </div>
+
+        <!-- Sorting -->
+        <div class="filter-group">
+          <label>Sort By</label>
+          <select id="filter-sort">
+            <option value="updated_desc" selected={sort === 'updated_desc'}>Recently Updated</option>
+            <option value="created_desc" selected={sort === 'created_desc'}>Recently Created</option>
+            <option value="title_asc" selected={sort === 'title_asc'}>Title A-Z</option>
+            <option value="title_desc" selected={sort === 'title_desc'}>Title Z-A</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notes grid -->
+    {notes.length === 0 ? (
+      <div class="empty-state bento-card">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        <h3>No materials match your filters</h3>
+        <p>Try clearing your search query or choosing another folder.</p>
+        <a href="/notes/new" class="btn btn-primary mt-12">Create New Note</a>
+      </div>
+    ) : (
+      <div class="bento-grid">
+        {notes.map((note) => (
+          <div class="bento-card col-span-4 note-card interactive">
+            <div class="note-card-header">
+              <div class="note-card-badges">
+                {note.category && <span class="badge badge-category">{note.category}</span>}
+                {note.semester && <span class="badge badge-semester">{note.semester}</span>}
+              </div>
+              <div class="note-card-actions">
+                {note.is_pinned && <span class="badge-icon pin" title="Pinned">📌</span>}
+                {note.is_favorite && <span class="badge-icon favorite" title="Bookmarked">★</span>}
+              </div>
+            </div>
+            
+            <a href={`/notes/${note.id}`} class="note-card-body">
+              <h3 class="note-card-title">{note.title}</h3>
+              <p class="note-card-snippet">{getCleanSnippet(note.content)}</p>
+            </a>
+
+            <div class="note-card-footer">
+              <div class="note-card-tags">
+                {note.tags.slice(0, 3).map((t: string) => (
+                  <a href={`/notes?tag=${encodeURIComponent(t)}`} class="note-tag">#{t}</a>
+                ))}
+                {note.tags.length > 3 && <span class="note-tag-more">+{note.tags.length - 3}</span>}
+              </div>
+              <span class="note-card-date">{new Date(note.updated_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+
+  <style>
+    .archive-wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .archive-header {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .header-title h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .notes-count {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .header-filters {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      padding: 16px 24px;
+    }
+
+    @media (max-width: 768px) {
+      .header-filters {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 480px) {
+      .header-filters {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .filter-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .filter-group input, .filter-group select {
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      width: 100%;
+      cursor: pointer;
+    }
+
+    .filter-group input:focus, .filter-group select:focus {
+      border-color: var(--accent-primary);
+    }
+
+    /* Column span override */
+    .col-span-4 {
+      grid-column: span 4;
+    }
+
+    @media (max-width: 1024px) {
+      .col-span-4 {
+        grid-column: span 6;
+      }
+    }
+
+    /* Note Card design */
+    .note-card {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: 220px;
+      justify-content: space-between;
+    }
+
+    .note-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .note-card-badges {
+      display: flex;
+      gap: 6px;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 2px 8px;
+      border-radius: var(--border-radius-full);
+    }
+
+    .badge-category {
+      background: var(--accent-glow);
+      color: var(--accent-primary);
+      border: 1px solid hsla(262, 83%, 58%, 0.15);
+    }
+
+    .badge-semester {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--card-border);
+    }
+
+    .note-card-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .badge-icon {
+      font-size: 0.85rem;
+    }
+
+    .note-card-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+
+    .note-card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .note-card-snippet {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      line-height: 1.5;
+    }
+
+    .note-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 12px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .note-card-tags {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
+
+    .note-tag {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .note-tag:hover {
+      color: var(--accent-primary);
+    }
+
+    .note-tag-more {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      background: var(--bg-tertiary);
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .note-card-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Empty state */
+    .empty-state {
+      padding: 48px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+    }
+
+    .empty-icon {
+      color: var(--text-muted);
+    }
+
+    .mt-12 {
+      margin-top: 12px;
+    }
+  </style>
+
+  <script>
+    // Filtering logic
+    const searchInput = document.getElementById('filter-search') as HTMLInputElement;
+    const categorySelect = document.getElementById('filter-category') as HTMLSelectElement;
+    const semesterSelect = document.getElementById('filter-semester') as HTMLSelectElement;
+    const sortSelect = document.getElementById('filter-sort') as HTMLSelectElement;
+
+    const applyFilters = () => {
+      const url = new URL(window.location.href);
+      
+      if (searchInput.value.trim()) {
+        url.searchParams.set('search', searchInput.value.trim());
+      } else {
+        url.searchParams.delete('search');
+      }
+
+      if (categorySelect.value) {
+        url.searchParams.set('category', categorySelect.value);
+      } else {
+        url.searchParams.delete('category');
+      }
+
+      if (semesterSelect.value) {
+        url.searchParams.set('semester', semesterSelect.value);
+      } else {
+        url.searchParams.delete('semester');
+      }
+
+      if (sortSelect.value) {
+        url.searchParams.set('sort', sortSelect.value);
+      } else {
+        url.searchParams.delete('sort');
+      }
+
+      window.location.href = url.pathname + url.search;
+    };
+
+    // Apply filter on change or enter
+    categorySelect?.addEventListener('change', applyFilters);
+    semesterSelect?.addEventListener('change', applyFilters);
+    sortSelect?.addEventListener('change', applyFilters);
+    
+    searchInput?.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        applyFilters();
+      }
+    });
+  </script>
+</Layout>

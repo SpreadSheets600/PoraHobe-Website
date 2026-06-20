@@ -1,0 +1,1550 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import type { Collection } from '../../utils/db';
+
+const user = Astro.locals.user;
+const db = Astro.locals.runtime?.env?.DB;
+
+if (!user || !db) {
+  return Astro.redirect('/login');
+}
+
+const { id } = Astro.params;
+
+if (!id) {
+  return Astro.redirect('/notes');
+}
+
+// 1. Fetch Note Details
+let note: any = null;
+try {
+  note = await db
+    .prepare(
+      `SELECT n.*, c.name as collection_name 
+       FROM notes n 
+       LEFT JOIN collections c ON n.collection_id = c.id 
+       WHERE n.id = ? AND n.user_id = ?`
+    )
+    .bind(id, user.id)
+    .first();
+} catch (e) {
+  console.error('Error fetching note details:', e);
+}
+
+if (!note) {
+  return Astro.redirect('/notes');
+}
+
+note.is_favorite = !!note.is_favorite;
+note.is_pinned = !!note.is_pinned;
+
+// 2. Fetch tags
+let tags: string[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT t.name FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = ?')
+    .bind(id)
+    .all();
+  tags = results.map((r: any) => r.name);
+} catch (e) {
+  console.error(e);
+}
+
+// 3. Fetch attachments
+let attachments: any[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT id, filename, file_size, mime_type, created_at FROM attachments WHERE note_id = ?')
+    .bind(id)
+    .all();
+  attachments = results;
+} catch (e) {
+  console.error(e);
+}
+
+// 4. Fetch links
+let links: any[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT id, url, type, title, thumbnail_url, watch_progress FROM links WHERE note_id = ?')
+    .bind(id)
+    .all();
+  links = results;
+} catch (e) {
+  console.error(e);
+}
+
+// 5. Fetch Backlinks
+let incomingBacklinks: any[] = [];
+try {
+  const { results } = await db
+    .prepare(
+      `SELECT n.id, n.title 
+       FROM backlinks b 
+       JOIN notes n ON b.source_note_id = n.id 
+       WHERE b.target_note_id = ? AND n.user_id = ?`
+    )
+    .bind(id, user.id)
+    .all();
+  incomingBacklinks = results;
+} catch (e) {
+  console.error(e);
+}
+
+// 6. Fetch Related notes
+let relatedNotes: any[] = [];
+try {
+  if (note.category) {
+    const { results } = await db
+      .prepare('SELECT id, title, category, semester FROM notes WHERE category = ? AND id != ? AND user_id = ? LIMIT 3')
+      .bind(note.category, id, user.id)
+      .all();
+    relatedNotes = results;
+  }
+} catch (e) {
+  console.error(e);
+}
+
+// 7. Fetch user collections for moving folder
+let collections: Collection[] = [];
+try {
+  const { results } = await db
+    .prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY name ASC')
+    .bind(user.id)
+    .all<Collection>();
+  collections = results;
+} catch (e) {
+  console.error(e);
+}
+
+// Format bytes helper
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+---
+
+<Layout title={`${note.title} - PoraHobe`}>
+  <!-- Reading progress bar for Focus Mode -->
+  <div class="focus-progress-bar-container" id="focus-progress-container">
+    <div class="focus-progress-bar" id="focus-progress"></div>
+  </div>
+
+  <div class="note-view-wrapper animate-fade-in" id="note-view-wrapper" data-note-id={note.id}>
+    <!-- Action Toolbar -->
+    <div class="note-toolbar bento-card">
+      <div class="toolbar-left">
+        <a href="/notes" class="toolbar-btn" title="Back to Notes">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="19" x2="5" y1="12" y2="12"></line>
+            <polyline points="12 19 5 12 12 5"></polyline>
+          </svg>
+          <span class="desktop-only">Back</span>
+        </a>
+        <div class="divider"></div>
+        <span class="folder-indicator">
+          📁
+          <select id="move-collection-select" title="Move folder">
+            <option value="">Root / None</option>
+            {collections.map((col) => (
+              <option value={col.id} selected={col.id === note.collection_id}>{col.name}</option>
+            ))}
+          </select>
+        </span>
+      </div>
+
+      <div class="toolbar-right">
+        <!-- Bookmark -->
+        <button class={`toolbar-btn ${note.is_favorite ? 'active' : ''}`} id="bookmark-toggle-btn" title="Bookmark">
+          <span class="star-icon">★</span>
+          <span class="desktop-only">Favorite</span>
+        </button>
+
+        <!-- Pin -->
+        <button class={`toolbar-btn ${note.is_pinned ? 'active' : ''}`} id="pin-toggle-btn" title="Pin note">
+          <span>📌</span>
+          <span class="desktop-only">Pin</span>
+        </button>
+
+        <div class="divider"></div>
+
+        <!-- Focus Mode Toggle -->
+        <button class="toolbar-btn" id="focus-mode-btn" title="Distraction-free Focus Mode">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+          </svg>
+          <span>Focus</span>
+        </button>
+
+        <!-- Edit Toggle -->
+        <button class="toolbar-btn" id="edit-mode-btn" title="Edit Note">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+          </svg>
+          <span>Edit</span>
+        </button>
+
+        <button class="toolbar-btn danger" id="delete-note-btn" title="Delete Note">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="note-main-layout" id="note-main-layout">
+      <!-- READ PANEL -->
+      <div class="read-pane bento-card" id="read-pane">
+        <div class="note-meta-header">
+          <h1 class="note-title-text" id="note-view-title">{note.title}</h1>
+          <div class="note-metadata-tags">
+            {note.category && <span class="badge badge-category">{note.category}</span>}
+            {note.semester && <span class="badge badge-semester">{note.semester}</span>}
+            {note.topic && <span class="badge badge-topic">Topic: {note.topic}</span>}
+          </div>
+        </div>
+
+        <div class="prose note-body-rendered" id="note-body-rendered">
+          <!-- Server side static loading fallback, client marked updates it -->
+          <div class="loading-prose">Rendering notes content...</div>
+        </div>
+
+        <!-- Backlinks Section -->
+        {incomingBacklinks.length > 0 && (
+          <div class="backlinks-section">
+            <h4>Linked references (Backlinks)</h4>
+            <div class="backlinks-list">
+              {incomingBacklinks.map((bl) => (
+                <a href={`/notes/${bl.id}`} class="backlink-item">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                  </svg>
+                  <span>{bl.title}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <!-- EDIT PANEL (Only visible during edit-mode, splits screen) -->
+      <div class="edit-pane bento-card hidden" id="edit-pane">
+        <div class="edit-form">
+          <input type="text" id="edit-title-input" value={note.title} class="edit-title-input" />
+          
+          <div class="edit-meta-grid">
+            <div class="form-group">
+              <label>Category</label>
+              <input type="text" id="edit-category-input" value={note.category || ''} />
+            </div>
+            <div class="form-group">
+              <label>Semester</label>
+              <input type="text" id="edit-semester-input" value={note.semester || ''} />
+            </div>
+            <div class="form-group">
+              <label>Topic</label>
+              <input type="text" id="edit-topic-input" value={note.topic || ''} />
+            </div>
+            <div class="form-group">
+              <label>Tags (comma separated)</label>
+              <input type="text" id="edit-tags-input" value={tags.join(', ')} />
+            </div>
+          </div>
+
+          <textarea id="edit-content-input" class="edit-content-textarea">{note.content}</textarea>
+          
+          <div class="edit-actions">
+            <button class="btn btn-secondary" id="cancel-edit-btn">Cancel</button>
+            <button class="btn btn-primary" id="save-edit-btn">Save Changes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIDEBAR WIDGETS (Only visible in normal/read mode, hidden in focus mode) -->
+      <div class="side-widgets" id="side-widgets">
+        <!-- Drag-and-drop file upload zone -->
+        <div class="bento-card upload-zone" id="upload-zone">
+          <div class="upload-prompt">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
+            </svg>
+            <p>Drag & Drop Files Here</p>
+            <span>or click to browse</span>
+            <input type="file" id="file-input-field" class="hidden-input" multiple />
+          </div>
+
+          <!-- Attachments list -->
+          <div class="attachments-container">
+            <h4>Attachments</h4>
+            <ul class="attachments-list" id="attachments-list">
+              {attachments.length === 0 ? (
+                <li class="empty-attachment-text" id="empty-att-msg">No files attached yet</li>
+              ) : (
+                attachments.map((att) => (
+                  <li class="attachment-item" data-att-id={att.id}>
+                    <div class="att-info">
+                      <a href={`/api/files/${att.id}`} target="_blank" class="att-name-link" title="Open file">
+                        📎 <span class="att-filename">{att.filename}</span>
+                      </a>
+                      <span class="att-size">{formatBytes(att.file_size)}</span>
+                    </div>
+                    <button class="delete-att-btn" data-att-id={att.id} title="Delete attachment">×</button>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </div>
+
+        <!-- YouTube Video Embed Widget -->
+        {links.some((l) => l.type === 'youtube') && (
+          <div class="bento-card youtube-widget">
+            <h3>YouTube Video Resources</h3>
+            <div class="videos-list">
+              {links.filter((l) => l.type === 'youtube').map((video) => {
+                const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
+                return (
+                  <div class="youtube-player-container" data-video-id={videoId} data-link-id={video.id} data-progress={video.watch_progress}>
+                    <div class="player-wrapper">
+                      <div id={`yt-player-${video.id}`}></div>
+                    </div>
+                    <div class="player-meta">
+                      <span class="player-title">{video.title || 'YouTube Resource'}</span>
+                      <span class="progress-info" id={`progress-text-${video.id}`}>
+                        Saved: {Math.floor(video.watch_progress / 60)}m {video.watch_progress % 60}s
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <!-- Clickable timestamps list explanation -->
+            <div class="timestamp-help">
+              💡 **Tip:** Click any timestamp like `1:05` or `12:45` in the note content to jump directly to that part of the video!
+            </div>
+          </div>
+        )}
+
+        <!-- Google Drive Widget -->
+        {links.some((l) => l.type === 'drive') && (
+          <div class="bento-card drive-widget">
+            <h3>Connected Drive Files</h3>
+            <div class="drive-list">
+              {links.filter((l) => l.type === 'drive').map((link) => (
+                <a href={link.url} target="_blank" class="drive-card">
+                  <div class="drive-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 10v6M2 10v6M12 2v20M2 10h20M2 16h20M12 2L2 10M12 2l10 8M12 22L2 16M12 22l10-6"></path>
+                    </svg>
+                  </div>
+                  <div class="drive-card-info">
+                    <span class="drive-filename">{link.title || 'Google Drive File'}</span>
+                    <span class="drive-action">View on Google Drive ↗</span>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <!-- Related Material Recommendations -->
+        {relatedNotes.length > 0 && (
+          <div class="bento-card related-widget">
+            <h3>Related Materials</h3>
+            <div class="related-list">
+              {relatedNotes.map((rn) => (
+                <a href={`/notes/${rn.id}`} class="related-card">
+                  <span class="related-title">{rn.title}</span>
+                  <span class="related-meta">{rn.category} • {rn.semester}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  <!-- Zoom View Image Overlay -->
+  <div id="image-zoom-overlay" class="modal-overlay hidden">
+    <div class="zoom-image-container">
+      <img id="zoomed-image" src="" alt="Zoomed View" />
+      <button id="close-zoom-btn">×</button>
+    </div>
+  </div>
+
+  <style>
+    .focus-progress-bar-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 4px;
+      background: var(--bg-tertiary);
+      z-index: 1000;
+      display: none;
+    }
+
+    .focus-progress-bar {
+      height: 100%;
+      width: 0;
+      background: var(--accent-primary);
+      transition: width var(--transition-fast);
+    }
+
+    .note-view-wrapper {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Toolbar styling */
+    .note-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 24px;
+    }
+
+    .toolbar-left, .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .divider {
+      width: 1px;
+      height: 24px;
+      background: var(--card-border);
+      margin: 0 4px;
+    }
+
+    .toolbar-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 14px;
+      border-radius: var(--border-radius-md);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text-secondary);
+      border: 1px solid var(--card-border);
+      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+    }
+
+    .toolbar-btn:hover {
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+
+    .toolbar-btn.active {
+      background: var(--accent-glow);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .toolbar-btn.danger:hover {
+      background: hsla(347, 77%, 50%, 0.1);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    .folder-indicator {
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg-secondary);
+      padding: 6px 12px;
+      border-radius: var(--border-radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    .folder-indicator select {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .star-icon {
+      font-size: 1.05rem;
+    }
+
+    .toolbar-btn.active .star-icon {
+      color: var(--warning);
+    }
+
+    /* Layout structure */
+    .note-main-layout {
+      display: grid;
+      grid-template-columns: 8fr 4fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 1024px) {
+      .note-main-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .read-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      padding: 32px;
+    }
+
+    .note-meta-header {
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 16px;
+    }
+
+    .note-title-text {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      margin-bottom: 12px;
+    }
+
+    .note-metadata-tags {
+      display: flex;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: var(--border-radius-full);
+      border: 1px solid var(--card-border);
+    }
+
+    .badge-category {
+      background: var(--accent-glow);
+      color: var(--accent-primary);
+      border-color: hsla(262, 83%, 58%, 0.15);
+    }
+
+    .badge-semester {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+    }
+
+    .badge-topic {
+      background: var(--bg-secondary);
+      color: var(--text-muted);
+    }
+
+    /* Prose notes rendering styling */
+    .note-body-rendered {
+      min-height: 200px;
+    }
+
+    .loading-prose {
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* LaTeX display/inline rendering styles */
+    .math-display {
+      margin: 1.5em 0;
+      overflow-x: auto;
+      padding: 10px;
+      background: var(--bg-secondary);
+      border-radius: var(--border-radius-md);
+      text-align: center;
+    }
+
+    .math-inline {
+      padding: 0 4px;
+    }
+
+    /* Backlinks list */
+    .backlinks-section {
+      border-top: 1px solid var(--card-border);
+      padding-top: 24px;
+      margin-top: 24px;
+    }
+
+    .backlinks-section h4 {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .backlinks-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .backlink-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      padding: 6px 12px;
+      border-radius: var(--border-radius-md);
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .backlink-item:hover {
+      border-color: var(--accent-primary);
+      color: var(--text-primary);
+    }
+
+    /* Sidebar widgets */
+    .side-widgets {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Upload zone styling */
+    .upload-zone {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 20px;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+      cursor: pointer;
+    }
+
+    .upload-zone.dragover {
+      background: var(--accent-glow);
+      border-color: var(--accent-primary);
+    }
+
+    .upload-prompt {
+      border: 2px dashed var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 24px 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      position: relative;
+    }
+
+    .upload-zone.dragover .upload-prompt {
+      border-color: var(--accent-primary);
+    }
+
+    .upload-icon {
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+
+    .upload-prompt p {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+
+    .upload-prompt span {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .hidden-input {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .attachments-container h4 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+
+    .attachments-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .empty-attachment-text {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    .attachment-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      padding: 8px 12px;
+      border-radius: var(--border-radius-md);
+      font-size: 0.85rem;
+    }
+
+    .att-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .att-name-link {
+      font-weight: 500;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .att-name-link:hover {
+      color: var(--accent-primary);
+    }
+
+    .att-size {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    .delete-att-btn {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0 4px;
+      border-radius: 4px;
+    }
+
+    .delete-att-btn:hover {
+      color: var(--danger);
+      background: var(--bg-tertiary);
+    }
+
+    /* YouTube widget */
+    .youtube-widget {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .videos-list {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .youtube-player-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .player-wrapper {
+      position: relative;
+      aspect-ratio: 16/9;
+      border-radius: var(--border-radius-md);
+      overflow: hidden;
+      background: black;
+      border: 1px solid var(--card-border);
+    }
+
+    .player-wrapper iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .player-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .player-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .progress-info {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .timestamp-help {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      padding-top: 10px;
+      border-top: 1px solid var(--card-border);
+    }
+
+    /* Google Drive Files styling */
+    .drive-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .drive-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      transition: border-color var(--transition-fast);
+    }
+
+    .drive-card:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .drive-icon {
+      color: var(--accent-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .drive-card-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .drive-filename {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .drive-action {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+    }
+
+    /* Related Materials widget */
+    .related-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .related-card {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      transition: border-color var(--transition-fast);
+    }
+
+    .related-card:hover {
+      border-color: var(--accent-primary);
+    }
+
+    .related-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .related-meta {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* EDIT PANE layout */
+    .edit-pane {
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .edit-pane.hidden {
+      display: none;
+    }
+
+    .edit-form {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .edit-title-input {
+      font-size: 1.75rem;
+      font-weight: 700;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 8px;
+      width: 100%;
+      color: var(--text-primary);
+    }
+
+    .edit-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 768px) {
+      .edit-meta-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .edit-meta-grid input {
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .edit-content-textarea {
+      height: 400px;
+      resize: vertical;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 16px;
+      color: var(--text-primary);
+    }
+
+    .edit-content-textarea:focus {
+      border-color: var(--accent-primary);
+    }
+
+    .edit-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+
+    /* Zoom image modal overlay */
+    .zoom-image-container {
+      position: relative;
+      max-width: 90vw;
+      max-height: 90vh;
+    }
+
+    .zoom-image-container img {
+      max-width: 100%;
+      max-height: 90vh;
+      border-radius: var(--border-radius-md);
+      box-shadow: var(--shadow-lg);
+    }
+
+    #close-zoom-btn {
+      position: absolute;
+      top: -40px;
+      right: 0;
+      color: white;
+      font-size: 2.5rem;
+      cursor: pointer;
+    }
+
+    /* Focus Mode active styles */
+    body.focus-active .sidebar,
+    body.focus-active .top-nav,
+    body.focus-active #side-widgets,
+    body.focus-active .note-toolbar {
+      display: none !important;
+    }
+
+    body.focus-active .main-content {
+      padding: 0 !important;
+      background: var(--bg-primary);
+      display: flex;
+      justify-content: center;
+      overflow-y: auto;
+    }
+
+    body.focus-active .note-main-layout {
+      grid-template-columns: 1fr;
+      width: 720px;
+      max-width: 90%;
+      margin: 48px auto;
+    }
+
+    body.focus-active .read-pane {
+      background: none !important;
+      border: none !important;
+      backdrop-filter: none !important;
+      box-shadow: none !important;
+      padding: 0;
+    }
+
+    /* Markdown prose customization */
+    .prose img {
+      max-width: 100%;
+      border-radius: var(--border-radius-md);
+      cursor: zoom-in;
+      transition: transform var(--transition-fast);
+      margin: 1.5em 0;
+      border: 1px solid var(--card-border);
+    }
+
+    .prose img:hover {
+      transform: scale(1.01);
+    }
+
+    /* Edit Split layout */
+    .note-view-wrapper.editing .note-main-layout {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    @media (max-width: 1024px) {
+      .note-view-wrapper.editing .note-main-layout {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .note-view-wrapper.editing #side-widgets {
+      display: none;
+    }
+
+    .desktop-only {
+      display: inline;
+    }
+
+    @media (max-width: 640px) {
+      .desktop-only {
+        display: none;
+      }
+    }
+  </style>
+
+  <!-- Marked and KaTeX for client-side math and markdown parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" is:inline></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" is:inline></script>
+
+  <script>
+    const noteViewWrapper = document.getElementById('note-view-wrapper') as HTMLDivElement;
+    const noteId = noteViewWrapper?.dataset.noteId;
+
+    const readPane = document.getElementById('read-pane');
+    const editPane = document.getElementById('edit-pane');
+    const editModeBtn = document.getElementById('edit-mode-btn');
+    const cancelEditBtn = document.getElementById('cancel-edit-btn');
+    const saveEditBtn = document.getElementById('save-edit-btn');
+
+    // Title & Content Inputs for edit mode
+    const editTitleInput = document.getElementById('edit-title-input') as HTMLInputElement;
+    const editContentInput = document.getElementById('edit-content-input') as HTMLTextAreaElement;
+    const editCategoryInput = document.getElementById('edit-category-input') as HTMLInputElement;
+    const editSemesterInput = document.getElementById('edit-semester-input') as HTMLInputElement;
+    const editTopicInput = document.getElementById('edit-topic-input') as HTMLInputElement;
+    const editTagsInput = document.getElementById('edit-tags-input') as HTMLInputElement;
+
+    // View content target
+    const viewTitleText = document.getElementById('note-view-title');
+    const viewBodyRendered = document.getElementById('note-body-rendered');
+
+    // Rendering content helper (runs on client)
+    const renderContent = (markdownText: string) => {
+      if (!viewBodyRendered) return;
+
+      // 1. Markdown
+      // @ts-ignore
+      let html = typeof marked !== 'undefined' ? marked.parse(markdownText) : markdownText;
+
+      // 2. LaTeX Display Math
+      html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match: string, equation: string) => {
+        try {
+          // @ts-ignore
+          return `<div class="math-display">${katex.renderToString(equation, { displayMode: true, throwOnError: false })}</div>`;
+        } catch (e) {
+          return match;
+        }
+      });
+
+      // 3. LaTeX Inline Math
+      html = html.replace(/\$([^$\n]+?)\$/g, (match: string, equation: string) => {
+        try {
+          // @ts-ignore
+          return `<span class="math-inline">${katex.renderToString(equation, { displayMode: false, throwOnError: false })}</span>`;
+        } catch (e) {
+          return match;
+        }
+      });
+
+      // 4. Wrap naked timestamps inside a link for YT video seek logic
+      // Matches 1:05, 12:45, 1:23:45
+      html = html.replace(/\b(\d{1,2}:)?(\d{1,2}):(\d{2})\b/g, (match: string) => {
+        const parts = match.split(':').map(Number);
+        let seconds = 0;
+        if (parts.length === 3) {
+          seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2) {
+          seconds = parts[0] * 60 + parts[1];
+        }
+        return `<a href="#" class="youtube-timestamp" data-seconds="${seconds}">${match}</a>`;
+      });
+
+      viewBodyRendered.innerHTML = html;
+
+      // Bind click triggers for timestamps
+      const tsLinks = viewBodyRendered.querySelectorAll('.youtube-timestamp');
+      tsLinks.forEach((link) => {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          const secs = Number((link as HTMLElement).dataset.seconds);
+          seekActiveVideos(secs);
+        });
+      });
+
+      // Bind click triggers for image zoom viewing
+      const imgs = viewBodyRendered.querySelectorAll('img');
+      const zoomOverlay = document.getElementById('image-zoom-overlay');
+      const zoomedImg = document.getElementById('zoomed-image') as HTMLImageElement;
+
+      imgs.forEach((img) => {
+        img.addEventListener('click', () => {
+          if (zoomOverlay && zoomedImg) {
+            zoomedImg.src = img.src;
+            zoomOverlay.classList.remove('hidden');
+          }
+        });
+      });
+    };
+
+    // Close zoom modal overlay
+    const zoomOverlay = document.getElementById('image-zoom-overlay');
+    const closeZoomBtn = document.getElementById('close-zoom-btn');
+    if (closeZoomBtn && zoomOverlay) {
+      closeZoomBtn.addEventListener('click', () => zoomOverlay.classList.add('hidden'));
+      zoomOverlay.addEventListener('click', (e) => {
+        if (e.target === zoomOverlay) zoomOverlay.classList.add('hidden');
+      });
+    }
+
+    // Run first render on page load
+    if (editContentInput) {
+      renderContent(editContentInput.value);
+    }
+
+    // Toggle Edit Mode Panel (Split View)
+    editModeBtn?.addEventListener('click', () => {
+      const isEditing = noteViewWrapper.classList.toggle('editing');
+      editPane?.classList.toggle('hidden');
+      
+      if (isEditing) {
+        editModeBtn.classList.add('active');
+        editContentInput.focus();
+      } else {
+        editModeBtn.classList.remove('active');
+      }
+    });
+
+    cancelEditBtn?.addEventListener('click', () => {
+      noteViewWrapper.classList.remove('editing');
+      editPane?.classList.add('hidden');
+      editModeBtn?.classList.remove('active');
+      
+      // Reset input values
+      if (editTitleInput) editTitleInput.value = viewTitleText?.textContent || '';
+    });
+
+    // Save Edit Panel changes
+    saveEditBtn?.addEventListener('click', async () => {
+      const title = editTitleInput.value.trim();
+      const content = editContentInput.value;
+      const category = editCategoryInput.value.trim();
+      const semester = editSemesterInput.value.trim();
+      const topic = editTopicInput.value.trim();
+      const tagsString = editTagsInput.value;
+
+      if (!title) {
+        alert('Title is required');
+        return;
+      }
+
+      const tags = tagsString
+        .split(',')
+        .map((t) => t.trim())
+        .filter((t) => t.length > 0);
+
+      try {
+        saveEditBtn.setAttribute('disabled', 'true');
+        saveEditBtn.textContent = 'Saving...';
+
+        const res = await fetch(`/api/notes/${noteId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            content,
+            category,
+            semester,
+            topic,
+            tags,
+          }),
+        });
+
+        if (res.ok) {
+          // Render new local states
+          if (viewTitleText) viewTitleText.textContent = title;
+          renderContent(content);
+
+          noteViewWrapper.classList.remove('editing');
+          editPane?.classList.add('hidden');
+          editModeBtn?.classList.remove('active');
+        } else {
+          const data = await res.json();
+          alert(data.error || 'Failed to update note');
+        }
+      } catch (e) {
+        console.error(e);
+        alert('Failed to save changes');
+      } finally {
+        saveEditBtn.removeAttribute('disabled');
+        saveEditBtn.textContent = 'Save Changes';
+      }
+    });
+
+    // Focus Mode Toggle (Distraction Free)
+    const focusModeBtn = document.getElementById('focus-mode-btn');
+    const focusProgressContainer = document.getElementById('focus-progress-container');
+    const focusProgressBar = document.getElementById('focus-progress');
+
+    focusModeBtn?.addEventListener('click', () => {
+      const isFocus = document.body.classList.toggle('focus-active');
+      focusModeBtn.classList.toggle('active');
+      
+      if (isFocus) {
+        focusProgressContainer!.style.display = 'block';
+        
+        // Add scroll listener for progress tracking
+        window.addEventListener('scroll', trackingFocusScroll);
+        trackingFocusScroll(); // initial trigger
+      } else {
+        focusProgressContainer!.style.display = 'none';
+        window.removeEventListener('scroll', trackingFocusScroll);
+      }
+    });
+
+    const trackingFocusScroll = () => {
+      if (!focusProgressBar) return;
+      const winScroll = document.documentElement.scrollTop || document.body.scrollTop;
+      const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+      const scrolled = height > 0 ? (winScroll / height) * 100 : 0;
+      focusProgressBar.style.width = scrolled + '%';
+    };
+
+    // Bookmark Toggle (Favorite)
+    const bookmarkBtn = document.getElementById('bookmark-toggle-btn');
+    bookmarkBtn?.addEventListener('click', async () => {
+      const isFavorite = bookmarkBtn.classList.toggle('active');
+      try {
+        await fetch(`/api/notes/${noteId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_favorite: isFavorite }),
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    // Pin Toggle
+    const pinBtn = document.getElementById('pin-toggle-btn');
+    pinBtn?.addEventListener('click', async () => {
+      const isPinned = pinBtn.classList.toggle('active');
+      try {
+        await fetch(`/api/notes/${noteId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_pinned: isPinned }),
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    // Move Collection (Folder dropdown)
+    const moveColSelect = document.getElementById('move-collection-select') as HTMLSelectElement;
+    moveColSelect?.addEventListener('change', async () => {
+      const colId = moveColSelect.value || null;
+      try {
+        const res = await fetch(`/api/notes/${noteId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collection_id: colId }),
+        });
+        if (!res.ok) alert('Failed to move folder');
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    // Delete Note
+    const deleteBtn = document.getElementById('delete-note-btn');
+    deleteBtn?.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to delete this study material? This will delete all R2 attachments and YouTube progress links.')) {
+        try {
+          const res = await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
+          if (res.ok) {
+            window.location.href = '/notes';
+          } else {
+            alert('Failed to delete note');
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    });
+
+    // Drag and Drop File Upload logic
+    const uploadZone = document.getElementById('upload-zone');
+    const fileInputField = document.getElementById('file-input-field') as HTMLInputElement;
+    const attachmentsList = document.getElementById('attachments-list');
+    const emptyAttMsg = document.getElementById('empty-att-msg');
+
+    const handleUploadFiles = async (files: FileList) => {
+      if (!files || files.length === 0) return;
+
+      const formatBytesLocal = (bytes: number) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      };
+
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('noteId', noteId!);
+
+        try {
+          // Visual state loading feedback
+          const loadingLi = document.createElement('li');
+          loadingLi.className = 'attachment-item';
+          loadingLi.innerHTML = `<span>⏳ Uploading "${file.name}"...</span>`;
+          attachmentsList?.appendChild(loadingLi);
+          emptyAttMsg?.classList.add('hidden');
+
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const data = await res.json();
+          loadingLi.remove();
+
+          if (res.ok) {
+            const newAtt = data.attachment;
+            const li = document.createElement('li');
+            li.className = 'attachment-item';
+            li.dataset.attId = newAtt.id;
+            li.innerHTML = `
+              <div class="att-info">
+                <a href="/api/files/${newAtt.id}" target="_blank" class="att-name-link" title="Open file">
+                  📎 <span class="att-filename">${newAtt.filename}</span>
+                </a>
+                <span class="att-size">${formatBytesLocal(newAtt.file_size)}</span>
+              </div>
+              <button class="delete-att-btn" data-att-id="${newAtt.id}">×</button>
+            `;
+            attachmentsList?.appendChild(li);
+            
+            // Re-bind delete trigger
+            bindDeleteAttachmentBtn(li.querySelector('.delete-att-btn') as HTMLButtonElement);
+          } else {
+            alert(`Failed to upload ${file.name}: ${data.error}`);
+            if (attachmentsList?.children.length === 0) emptyAttMsg?.classList.remove('hidden');
+          }
+        } catch (e) {
+          console.error(e);
+          alert('Upload failed due to connection error.');
+        }
+      }
+    };
+
+    // Attach drag & drop triggers
+    uploadZone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadZone.classList.add('dragover');
+    });
+
+    uploadZone?.addEventListener('dragleave', () => {
+      uploadZone.classList.remove('dragover');
+    });
+
+    uploadZone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadZone.classList.remove('dragover');
+      const files = e.dataTransfer?.files;
+      if (files) handleUploadFiles(files);
+    });
+
+    fileInputField?.addEventListener('change', () => {
+      const files = fileInputField.files;
+      if (files) handleUploadFiles(files);
+    });
+
+    // Delete attachment helper
+    const bindDeleteAttachmentBtn = (btn: HTMLButtonElement) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const attId = btn.dataset.attId;
+        if (confirm('Delete this file?')) {
+          try {
+            const res = await fetch(`/api/files/${attId}`, { method: 'DELETE' });
+            if (res.ok) {
+              const li = btn.closest('.attachment-item');
+              li?.remove();
+              if (attachmentsList?.children.length === 0) {
+                emptyAttMsg?.classList.remove('hidden');
+              }
+            } else {
+              alert('Failed to delete file');
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        }
+      });
+    };
+
+    // Bind all initial attachment delete triggers
+    const initialDeleteBtns = document.querySelectorAll('.delete-att-btn');
+    initialDeleteBtns.forEach((btn) => bindDeleteAttachmentBtn(btn as HTMLButtonElement));
+
+    // YouTube API watch progress tracker & seeks timestamps logic
+    const ytPlayers = new Map<string, any>();
+    const activeVideoContainers = document.querySelectorAll('.youtube-player-container');
+
+    // Make YouTube seek functional
+    const seekActiveVideos = (seconds: number) => {
+      ytPlayers.forEach((player) => {
+        try {
+          player.seekTo(seconds, true);
+          player.playVideo();
+        } catch (e) {
+          console.error('Failed to seek player:', e);
+        }
+      });
+    };
+
+    // Load YT Player script
+    if (activeVideoContainers.length > 0) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
+
+    // Global YouTube API Ready Callback
+    // @ts-ignore
+    window.onYouTubeIframeAPIReady = () => {
+      activeVideoContainers.forEach((container) => {
+        const linkId = (container as HTMLElement).dataset.linkId;
+        const videoId = (container as HTMLElement).dataset.videoId;
+        const initialProgress = Number((container as HTMLElement).dataset.progress) || 0;
+        const progressText = document.getElementById(`progress-text-${linkId}`);
+
+        let lastSavedTime = initialProgress;
+
+        // @ts-ignore
+        const player = new YT.Player(`yt-player-${linkId}`, {
+          height: '100%',
+          width: '100%',
+          videoId: videoId,
+          playerVars: {
+            start: initialProgress,
+            rel: 0,
+            modestbranding: 1
+          },
+          events: {
+            onStateChange: (event: any) => {
+              // @ts-ignore
+              if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+                saveProgress(player.getCurrentTime());
+              }
+            }
+          }
+        });
+
+        // Periodically check/save progress (every 5 seconds while playing)
+        setInterval(() => {
+          try {
+            // @ts-ignore
+            if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
+              const currentTime = Math.round(player.getCurrentTime());
+              if (Math.abs(currentTime - lastSavedTime) >= 5) {
+                saveProgress(currentTime);
+              }
+            }
+          } catch (e) {}
+        }, 5000);
+
+        const saveProgress = async (currentTime: number) => {
+          const roundedTime = Math.round(currentTime);
+          lastSavedTime = roundedTime;
+          
+          if (progressText) {
+            const mins = Math.floor(roundedTime / 60);
+            const secs = roundedTime % 60;
+            progressText.textContent = `Saved: ${mins}m ${secs}s`;
+          }
+
+          try {
+            await fetch('/api/progress', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                linkId: linkId,
+                progress: roundedTime
+              })
+            });
+          } catch (e) {
+            console.error('Failed to auto save progress:', e);
+          }
+        };
+
+        ytPlayers.set(linkId!, player);
+      });
+    };
+  </script>
+</Layout>
