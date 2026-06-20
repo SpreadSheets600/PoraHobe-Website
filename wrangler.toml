@@ -7,4 +7,8 @@ binding = "DB"
 database_name = "porahobe-db"
 database_id = "local-db-id"
 
+[[kv_namespaces]]
+binding = "SESSION"
+id = "f0862b03d25d4d169eb9ec9a670c50bb"
+
 # Removed R2 bindings to use S3 (Backblaze B2) instead.
