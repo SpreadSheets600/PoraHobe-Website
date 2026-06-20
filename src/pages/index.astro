@@ -58,36 +58,57 @@ const formatBytes = (bytes: number) => {
 };
 
 // 2. Fetch Recent Notes
-let recentNotes: Note[] = [];
+let recentNotes: any[] = [];
 try {
   const { results } = await db
-    .prepare('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC LIMIT 4')
+    .prepare(
+      `SELECT n.*, 
+       (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
+       (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
+       (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
+       (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
+       FROM notes n WHERE n.user_id = ? ORDER BY n.updated_at DESC LIMIT 4`
+    )
     .bind(user.id)
-    .all<Note>();
+    .all();
   recentNotes = results;
 } catch (e) {
   console.error('Failed to load recent notes:', e);
 }
 
 // 3. Fetch Pinned Notes
-let pinnedNotes: Note[] = [];
+let pinnedNotes: any[] = [];
 try {
   const { results } = await db
-    .prepare('SELECT * FROM notes WHERE user_id = ? AND is_pinned = 1 ORDER BY updated_at DESC LIMIT 4')
+    .prepare(
+      `SELECT n.*, 
+       (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
+       (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
+       (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
+       (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
+       FROM notes n WHERE n.user_id = ? AND n.is_pinned = 1 ORDER BY n.updated_at DESC LIMIT 4`
+    )
     .bind(user.id)
-    .all<Note>();
+    .all();
   pinnedNotes = results;
 } catch (e) {
   console.error('Failed to load pinned notes:', e);
 }
 
 // 4. Fetch Favorite Notes
-let favoriteNotes: Note[] = [];
+let favoriteNotes: any[] = [];
 try {
   const { results } = await db
-    .prepare('SELECT * FROM notes WHERE user_id = ? AND is_favorite = 1 ORDER BY updated_at DESC LIMIT 4')
+    .prepare(
+      `SELECT n.*, 
+       (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
+       (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
+       (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
+       (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
+       FROM notes n WHERE n.user_id = ? AND n.is_favorite = 1 ORDER BY n.updated_at DESC LIMIT 4`
+    )
     .bind(user.id)
-    .all<Note>();
+    .all();
   favoriteNotes = results;
 } catch (e) {
   console.error('Failed to load favorite notes:', e);
@@ -150,14 +171,14 @@ try {
     <div class="welcome-banner bento-card">
       <div class="welcome-text">
         <h2>Welcome back, {user.username}! ✨</h2>
-        <p>Your workspace is synced and ready. Here is a summary of your study materials and notes.</p>
+        <p>Your workspace is synced and ready. Here is a summary of your shared study materials and indexed resources.</p>
       </div>
       <div class="quick-actions">
         <a href="/notes/new" class="quick-action-btn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M5 12h14M12 5v14"></path>
           </svg>
-          <span>New Note</span>
+          <span>Share Material</span>
         </a>
         <button class="quick-action-btn" id="dash-create-folder-btn">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -174,19 +195,19 @@ try {
         <h3>Storage & Stats</h3>
         <div class="stats-list">
           <div class="stat-item">
-            <span class="stat-label">Total Notes</span>
+            <span class="stat-label">Total Materials</span>
             <span class="stat-value">{stats.totalNotes}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Pinned Notes</span>
+            <span class="stat-label">Pinned Items</span>
             <span class="stat-value">{stats.pinnedNotes}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">Favorites</span>
+            <span class="stat-label">Bookmarks</span>
             <span class="stat-value">{stats.favoriteNotes}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-label">R2 Storage</span>
+            <span class="stat-label">S3 Storage</span>
             <span class="stat-value">{formatBytes(stats.storageUsedBytes)}</span>
           </div>
         </div>
@@ -199,12 +220,18 @@ try {
           <a href="/notes?is_pinned=1" class="view-all-link">View all</a>
         </div>
         {pinnedNotes.length === 0 ? (
-          <div class="empty-state">No pinned notes yet. Pin notes to keep them handy here.</div>
+          <div class="empty-state">No pinned resources yet. Pin items inside their page to keep them handy here.</div>
         ) : (
           <div class="notes-grid">
             {pinnedNotes.map((note) => (
               <a href={`/notes/${note.id}`} class="note-mini-card">
-                <span class="pin-icon">📌</span>
+                <span class="pin-icon" style="font-size: 1.1rem;">
+                  {note.attachment_count > 0 ? (
+                    note.first_attachment_mime === 'application/pdf' ? '📄' : '🖼️'
+                  ) : note.link_count > 0 ? (
+                    note.first_link_type === 'youtube' ? '🎥' : note.first_link_type === 'drive' ? '📁' : '🔗'
+                  ) : '📝'}
+                </span>
                 <span class="note-title">{note.title}</span>
                 <span class="note-meta">{note.category || 'General'} • {note.semester || 'All'}</span>
               </a>
@@ -216,21 +243,24 @@ try {
       <!-- Recent Notes -->
       <div class="bento-card col-span-6">
         <div class="card-header">
-          <h3>Recent Notes</h3>
+          <h3>Recent Materials</h3>
           <a href="/notes" class="view-all-link">View all</a>
         </div>
         {recentNotes.length === 0 ? (
-          <div class="empty-state">No notes found. Create your first note to get started!</div>
+          <div class="empty-state">No study materials shared yet. Share your first resource to get started!</div>
         ) : (
           <ul class="item-list">
             {recentNotes.map((note) => (
               <li>
                 <a href={`/notes/${note.id}`} class="list-item-link">
                   <div class="item-title-wrapper">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-                      <polyline points="14 2 14 8 20 8"></polyline>
-                    </svg>
+                    <span style="font-size: 1.1rem; width: 22px; display: inline-block;">
+                      {note.attachment_count > 0 ? (
+                        note.first_attachment_mime === 'application/pdf' ? '📄' : '🖼️'
+                      ) : note.link_count > 0 ? (
+                        note.first_link_type === 'youtube' ? '🎥' : note.first_link_type === 'drive' ? '📁' : '🔗'
+                      ) : '📝'}
+                    </span>
                     <span class="item-title">{note.title}</span>
                   </div>
                   <span class="item-time">{new Date(note.updated_at).toLocaleDateString()}</span>
@@ -244,18 +274,24 @@ try {
       <!-- Favorite Materials -->
       <div class="bento-card col-span-6">
         <div class="card-header">
-          <h3>Favorite Materials</h3>
+          <h3>Bookmarked Resources</h3>
           <a href="/notes?is_favorite=1" class="view-all-link">View all</a>
         </div>
         {favoriteNotes.length === 0 ? (
-          <div class="empty-state">No favorites marked. Click the bookmark star inside a note.</div>
+          <div class="empty-state">No bookmarks marked. Star resources inside their details view to see them here.</div>
         ) : (
           <ul class="item-list">
             {favoriteNotes.map((note) => (
               <li>
                 <a href={`/notes/${note.id}`} class="list-item-link">
                   <div class="item-title-wrapper">
-                    <span class="fav-star">★</span>
+                    <span style="font-size: 1.1rem; width: 22px; display: inline-block;">
+                      {note.attachment_count > 0 ? (
+                        note.first_attachment_mime === 'application/pdf' ? '📄' : '🖼️'
+                      ) : note.link_count > 0 ? (
+                        note.first_link_type === 'youtube' ? '🎥' : note.first_link_type === 'drive' ? '📁' : '🔗'
+                      ) : '📝'}
+                    </span>
                     <span class="item-title">{note.title}</span>
                   </div>
                   <span class="item-tag">{note.category || 'General'}</span>

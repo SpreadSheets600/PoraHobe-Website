@@ -36,15 +36,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
       );
     }
 
-    // Verify ownership of the note
+    // Verify ownership of the note if it exists
     const note = await db
-      .prepare('SELECT id FROM notes WHERE id = ? AND user_id = ?')
-      .bind(noteId, user.id)
-      .first();
+      .prepare('SELECT id, user_id FROM notes WHERE id = ?')
+      .bind(noteId)
+      .first<{ id: string; user_id: string }>();
 
-    if (!note) {
-      return new Response(JSON.stringify({ error: 'Note not found or unauthorized' }), {
-        status: 404,
+    if (note && note.user_id !== user.id) {
+      return new Response(JSON.stringify({ error: 'Unauthorized note access' }), {
+        status: 403,
       });
     }
 

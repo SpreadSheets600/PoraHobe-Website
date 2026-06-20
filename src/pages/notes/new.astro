@@ -42,44 +42,101 @@ try {
 }
 ---
 
-<Layout title="New Note - PoraHobe">
+<Layout title="Share Material - PoraHobe">
   <div class="creator-wrapper animate-fade-in">
     <div class="creator-header">
       <div class="header-left">
         <a href="/notes" class="back-link">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="19" x2="5" y1="12" y2="12"></line>
             <polyline points="12 19 5 12 12 5"></polyline>
           </svg>
-          <span>All Notes</span>
+          <span>Back to Materials</span>
         </a>
-        <h2>New Study Material</h2>
+        <h2>Share Study Material</h2>
       </div>
       <div class="header-right">
-        <button class="btn btn-secondary" id="preview-toggle-btn">Toggle Preview</button>
-        <button class="btn btn-primary" id="save-note-btn">
+        <button class="btn btn-primary" id="save-material-btn">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="20 6 9 17 4 12"></polyline>
           </svg>
-          <span>Save Note</span>
+          <span>Share Resource</span>
         </button>
       </div>
     </div>
 
-    <form id="create-note-form" class="creator-form-layout">
-      <!-- Left side: editor inputs -->
-      <div class="editor-pane bento-card">
-        <div class="form-row">
-          <div class="form-group flex-1">
-            <input type="text" id="note-title" name="title" class="title-input" placeholder="Title your note..." required />
+    <!-- Main sharing form layout -->
+    <div class="sharing-form-grid">
+      <!-- Left side: primary content details -->
+      <div class="bento-card col-span-8 main-form-pane">
+        <div class="form-group">
+          <label for="material-title">Resource Title</label>
+          <input type="text" id="material-title" class="form-input title-field-input" placeholder="e.g. Lecture 1 Notes, Calculus Cheat Sheet..." required />
+        </div>
+
+        <!-- Share type selectors -->
+        <div class="share-type-section">
+          <label class="section-label">Select Resource Type</label>
+          <div class="share-type-tabs">
+            <button class="type-tab active" id="tab-file-btn">
+              📁 Upload File (PDF / Image)
+            </button>
+            <button class="type-tab" id="tab-link-btn">
+              🔗 Share URL Link (YouTube / Drive)
+            </button>
           </div>
         </div>
 
-        <div class="metadata-grid">
+        <!-- File upload container -->
+        <div class="type-container" id="file-upload-container">
+          <div class="upload-dropzone" id="upload-dropzone">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
+            </svg>
+            <p class="upload-title">Drag & Drop your study file here</p>
+            <span class="upload-subtext">Supports PDF, PNG, JPG (Max 50MB)</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="browse-files-btn">Browse Files</button>
+            <input type="file" id="file-uploader-input" class="hidden-file-input" />
+          </div>
+
+          <!-- File Upload Progress / Complete States -->
+          <div class="upload-progress-card hidden" id="upload-progress-card">
+            <div class="file-icon">📎</div>
+            <div class="file-details">
+              <span class="file-name-label" id="uploaded-filename">lecture-notes.pdf</span>
+              <span class="file-size-label" id="uploaded-filesize">2.4 MB</span>
+              <!-- progress animation -->
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="upload-progress-fill"></div>
+              </div>
+            </div>
+            <button class="remove-file-btn" id="remove-uploaded-file-btn" title="Remove attachment">×</button>
+          </div>
+        </div>
+
+        <!-- URL sharing container -->
+        <div class="type-container hidden" id="url-share-container">
+          <div class="form-group">
+            <label for="material-url">Resource URL</label>
+            <input type="url" id="material-url" class="form-input" placeholder="Paste YouTube, Google Drive, or Web link here..." />
+            <span class="helper-text">Enter URL to generate custom preview embeds automatically.</span>
+          </div>
+        </div>
+
+        <div class="form-group description-group">
+          <label for="material-description">Description / Brief Notes (Optional)</label>
+          <textarea id="material-description" class="form-textarea" placeholder="Add any details, context, key topics covered, or timestamps for videos..." rows="8"></textarea>
+        </div>
+      </div>
+
+      <!-- Right side: Metadata configurations -->
+      <div class="bento-card col-span-4 meta-form-pane">
+        <h3>Material Metadata</h3>
+        <div class="meta-inputs-list">
           <!-- Folder select -->
           <div class="form-group">
-            <label for="note-collection">Folder</label>
-            <select id="note-collection" name="collection_id">
+            <label for="material-collection">Target Folder</label>
+            <select id="material-collection" class="form-select">
               <option value="">Root / None</option>
               {collections.map((col) => (
                 <option value={col.id}>{col.name}</option>
@@ -87,10 +144,10 @@ try {
             </select>
           </div>
 
-          <!-- Category select/input -->
+          <!-- Category -->
           <div class="form-group">
-            <label for="note-category">Category</label>
-            <input type="text" id="note-category" name="category" placeholder="e.g., Computer Science" list="categories-list" required />
+            <label for="material-category">Category / Subject</label>
+            <input type="text" id="material-category" class="form-input" placeholder="e.g. Computer Science" list="categories-list" required />
             <datalist id="categories-list">
               {existingCategories.map((cat) => <option value={cat} />)}
             </datalist>
@@ -98,8 +155,8 @@ try {
 
           <!-- Semester -->
           <div class="form-group">
-            <label for="note-semester">Semester</label>
-            <input type="text" id="note-semester" name="semester" placeholder="e.g., Semester 3" list="semesters-list" />
+            <label for="material-semester">Semester</label>
+            <input type="text" id="material-semester" class="form-input" placeholder="e.g. Semester 3" list="semesters-list" />
             <datalist id="semesters-list">
               {existingSemesters.map((sem) => <option value={sem} />)}
             </datalist>
@@ -107,62 +164,52 @@ try {
 
           <!-- Topic -->
           <div class="form-group">
-            <label for="note-topic">Topic</label>
-            <input type="text" id="note-topic" name="topic" placeholder="e.g., Data Structures" />
+            <label for="material-topic">Topic</label>
+            <input type="text" id="material-topic" class="form-input" placeholder="e.g. Data Structures" />
           </div>
 
-          <!-- Comma tags -->
-          <div class="form-group col-span-2">
-            <label for="note-tags">Tags (comma separated)</label>
-            <input type="text" id="note-tags" name="tags" placeholder="e.g., algorithms, study, code" />
+          <!-- Tags -->
+          <div class="form-group">
+            <label for="material-tags">Tags (comma separated)</label>
+            <input type="text" id="material-tags" class="form-input" placeholder="e.g. revision, cheat-sheet, midsem" />
           </div>
 
-          <div class="form-group checkbox-row">
+          <div class="divider"></div>
+
+          <!-- Toggles -->
+          <div class="toggle-group">
             <label class="toggle-switch">
-              <input type="checkbox" id="note-favorite" name="is_favorite" />
+              <input type="checkbox" id="material-favorite" />
               <span class="slider"></span>
-              <span class="toggle-label">Bookmark</span>
+              <span class="toggle-label">Bookmark (Favorite)</span>
             </label>
 
             <label class="toggle-switch">
-              <input type="checkbox" id="note-pinned" name="is_pinned" />
+              <input type="checkbox" id="material-pinned" />
               <span class="slider"></span>
               <span class="toggle-label">Pin to Dashboard</span>
             </label>
           </div>
         </div>
-
-        <!-- Markdown editor area -->
-        <div class="form-group textarea-group">
-          <label class="sr-only" for="note-content">Note Content (Markdown supported)</label>
-          <textarea id="note-content" name="content" placeholder="Write rich notes here... Supports Markdown, LaTeX equations ($E=mc^2$), checklists, code blocks, etc. Paste YouTube and Google Drive links to automatically generate embeds/previews." class="content-textarea"></textarea>
-        </div>
       </div>
-
-      <!-- Right side: live preview (split pane) -->
-      <div class="preview-pane bento-card hidden" id="preview-pane">
-        <h3 class="preview-title-header" id="preview-title">Note Preview</h3>
-        <div class="prose content-preview" id="preview-body">
-          <p class="preview-placeholder">Your markdown preview will render here...</p>
-        </div>
-      </div>
-    </form>
+    </div>
   </div>
 
   <style>
     .creator-wrapper {
-      max-width: 1200px;
+      max-width: 1100px;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
-      gap: 24px;
-      height: calc(100vh - 120px);
+      gap: 20px;
     }
 
     .creator-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 12px;
     }
 
     .header-left {
@@ -190,102 +237,51 @@ try {
       letter-spacing: -0.02em;
     }
 
-    .header-right {
-      display: flex;
-      gap: 12px;
-    }
-
-    /* Form and Split Screen */
-    .creator-form-layout {
-      display: flex;
+    .sharing-form-grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
       gap: 20px;
-      flex: 1;
-      min-height: 0;
-      height: 100%;
     }
 
-    .editor-pane {
-      flex: 1;
+    .main-form-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .meta-form-pane {
       display: flex;
       flex-direction: column;
       gap: 20px;
-      min-width: 0;
-      height: 100%;
-      overflow-y: auto;
     }
 
-    .preview-pane {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      min-width: 0;
-      height: 100%;
-      overflow-y: auto;
-      background: var(--bg-secondary);
-      border: 1px dashed var(--card-border);
-    }
-
-    .preview-pane.hidden {
-      display: none;
-    }
-
-    .preview-title-header {
-      font-size: 1.2rem;
-      font-weight: 700;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 12px;
-      color: var(--accent-primary);
-    }
-
-    .content-preview {
-      flex: 1;
-      overflow-y: auto;
-    }
-
-    .preview-placeholder {
-      color: var(--text-muted);
-      font-style: italic;
-    }
-
-    /* Title Input */
-    .title-input {
-      font-size: 1.5rem;
+    .meta-form-pane h3 {
+      font-size: 1.1rem;
       font-weight: 700;
       border-bottom: 1px solid var(--card-border);
       padding-bottom: 8px;
-      width: 100%;
-      color: var(--text-primary);
     }
 
-    .title-input::placeholder {
-      color: var(--text-muted);
-    }
-
-    /* Metadata Grid */
-    .metadata-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
+    .meta-inputs-list {
+      display: flex;
+      flex-direction: column;
       gap: 16px;
     }
 
-    @media (max-width: 768px) {
-      .metadata-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
+    .title-field-input {
+      font-size: 1.15rem;
+      font-weight: 600;
+      padding: 12px 16px;
     }
 
-    .form-group {
+    /* Share Type Section */
+    .share-type-section {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 8px;
     }
 
-    .form-group.col-span-2 {
-      grid-column: span 2;
-    }
-
-    .form-group label {
+    .section-label {
       font-size: 0.75rem;
       font-weight: 600;
       color: var(--text-muted);
@@ -293,52 +289,178 @@ try {
       letter-spacing: 0.05em;
     }
 
-    .form-group input, .form-group select {
+    .share-type-tabs {
+      display: flex;
+      background: var(--bg-secondary);
+      border: 1px solid var(--card-border);
+      padding: 4px;
+      border-radius: var(--border-radius-md);
+      gap: 4px;
+    }
+
+    .type-tab {
+      flex: 1;
+      padding: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: var(--border-radius-sm);
+      cursor: pointer;
+      color: var(--text-secondary);
+      transition: background var(--transition-fast), color var(--transition-fast);
+      text-align: center;
+    }
+
+    .type-tab.active {
+      background: var(--card-bg);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .type-container {
+      width: 100%;
+      min-height: 180px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .type-container.hidden {
+      display: none;
+    }
+
+    /* Upload Zone */
+    .upload-dropzone {
+      border: 2px dashed var(--card-border);
+      border-radius: var(--border-radius-md);
+      padding: 36px 20px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-secondary);
+      transition: border-color var(--transition-fast), background var(--transition-fast);
+      position: relative;
+      cursor: pointer;
+    }
+
+    .upload-dropzone:hover, .upload-dropzone.dragover {
+      border-color: var(--accent-primary);
+      background: var(--accent-glow);
+    }
+
+    .upload-icon {
+      color: var(--text-muted);
+    }
+
+    .upload-title {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+    }
+
+    .upload-subtext {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      margin-top: 4px;
+    }
+
+    .hidden-file-input {
+      display: none;
+    }
+
+    /* Upload Progress Card */
+    .upload-progress-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
       background: var(--bg-secondary);
       border: 1px solid var(--card-border);
       border-radius: var(--border-radius-md);
-      padding: 8px 12px;
-      font-size: 0.9rem;
-      color: var(--text-primary);
+      position: relative;
     }
 
-    .form-group input:focus, .form-group select:focus {
-      border-color: var(--accent-primary);
+    .upload-progress-card.hidden {
+      display: none;
     }
 
-    /* Textarea styling */
-    .textarea-group {
+    .file-icon {
+      font-size: 1.8rem;
+      flex-shrink: 0;
+    }
+
+    .file-details {
       flex: 1;
       display: flex;
       flex-direction: column;
-      min-height: 250px;
+      gap: 4px;
+      min-width: 0;
     }
 
-    .content-textarea {
-      flex: 1;
-      resize: none;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.95rem;
-      line-height: 1.6;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 16px;
+    .file-name-label {
+      font-weight: 600;
+      font-size: 0.9rem;
       color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
-    .content-textarea:focus {
-      border-color: var(--accent-primary);
+    .file-size-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .progress-bar-track {
+      width: 100%;
+      height: 4px;
+      background: var(--bg-tertiary);
+      border-radius: var(--border-radius-full);
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0;
+      background: var(--accent-primary);
+      transition: width 0.15s ease;
+    }
+
+    .remove-file-btn {
+      font-size: 1.5rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0 8px;
+    }
+
+    .remove-file-btn:hover {
+      color: var(--danger);
+    }
+
+    .helper-text {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: var(--card-border);
+      margin: 8px 0;
     }
 
     /* Toggle switches */
-    .checkbox-row {
-      grid-column: span 2;
-      flex-direction: row;
-      align-items: center;
-      gap: 24px;
-      height: 100%;
-      padding-top: 20px;
+    .toggle-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
 
     .toggle-switch {
@@ -358,23 +480,24 @@ try {
 
     .slider {
       position: relative;
-      width: 36px;
-      height: 20px;
+      width: 34px;
+      height: 18px;
       background-color: var(--bg-tertiary);
       border: 1px solid var(--card-border);
-      transition: .3s;
+      transition: .25s;
       border-radius: 20px;
+      flex-shrink: 0;
     }
 
     .slider:before {
       position: absolute;
       content: "";
-      height: 12px;
-      width: 12px;
+      height: 10px;
+      width: 10px;
       left: 3px;
       bottom: 3px;
       background-color: var(--text-muted);
-      transition: .3s;
+      transition: .25s;
       border-radius: 50%;
     }
 
@@ -393,104 +516,220 @@ try {
       color: var(--text-secondary);
     }
 
-    .flex-1 {
-      flex: 1;
-    }
+    .col-span-8 { grid-column: span 8; }
+    .col-span-4 { grid-column: span 4; }
 
-    .sr-only {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      margin: -1px;
-      overflow: hidden;
-      clip: rect(0, 0, 0, 0);
-      white-space: nowrap;
-      border: 0;
+    @media (max-width: 1024px) {
+      .col-span-8 { grid-column: span 12; }
+      .col-span-4 { grid-column: span 12; }
     }
   </style>
 
-  <!-- Marked and KaTeX via CDN for live preview parsing -->
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" is:inline></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" is:inline></script>
-  
   <script>
-    // Preview toggle
-    const previewToggleBtn = document.getElementById('preview-toggle-btn');
-    const previewPane = document.getElementById('preview-pane');
-    
-    previewToggleBtn?.addEventListener('click', (e) => {
+    // Client-side state manager
+    let resourceType: 'file' | 'link' = 'file';
+    let uploadedFileId: string | null = null;
+    let uploadedFilenameText = '';
+    let uploadedFileMime = '';
+
+    // Generate browser-side UUID to link files and note containers asynchronously
+    const generatedNoteId = crypto.randomUUID();
+
+    // Tab switches
+    const tabFileBtn = document.getElementById('tab-file-btn');
+    const tabLinkBtn = document.getElementById('tab-link-btn');
+    const fileUploadContainer = document.getElementById('file-upload-container');
+    const urlShareContainer = document.getElementById('url-share-container');
+
+    tabFileBtn?.addEventListener('click', (e) => {
       e.preventDefault();
-      previewPane?.classList.toggle('hidden');
+      resourceType = 'file';
+      tabFileBtn.classList.add('active');
+      tabLinkBtn?.classList.remove('active');
+      fileUploadContainer?.classList.remove('hidden');
+      urlShareContainer?.classList.add('hidden');
     });
 
-    // Content Editor Live Markdown & Math rendering
-    const noteContent = document.getElementById('note-content') as HTMLTextAreaElement;
-    const noteTitle = document.getElementById('note-title') as HTMLInputElement;
-    const previewBody = document.getElementById('preview-body');
-    const previewTitle = document.getElementById('preview-title');
+    tabLinkBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      resourceType = 'link';
+      tabLinkBtn.classList.add('active');
+      tabFileBtn?.classList.remove('active');
+      urlShareContainer?.classList.remove('hidden');
+      fileUploadContainer?.classList.add('hidden');
+    });
 
-    const updatePreview = () => {
-      if (!previewBody) return;
-      
-      const title = noteTitle.value.trim() || 'Note Preview';
-      previewTitle!.textContent = title;
+    // Upload Dropzone selectors
+    const uploadDropzone = document.getElementById('upload-dropzone');
+    const browseFilesBtn = document.getElementById('browse-files-btn');
+    const fileUploaderInput = document.getElementById('file-uploader-input') as HTMLInputElement;
 
-      const markdownText = noteContent.value;
-      if (!markdownText.trim()) {
-        previewBody.innerHTML = '<p class="preview-placeholder">Your markdown preview will render here...</p>';
+    const uploadProgressCard = document.getElementById('upload-progress-card');
+    const uploadedFilename = document.getElementById('uploaded-filename');
+    const uploadedFilesize = document.getElementById('uploaded-filesize');
+    const uploadProgressFill = document.getElementById('upload-progress-fill');
+    const removeUploadedFileBtn = document.getElementById('remove-uploaded-file-btn');
+    
+    const materialTitle = document.getElementById('material-title') as HTMLInputElement;
+
+    // Trigger browse
+    browseFilesBtn?.addEventListener('click', () => {
+      fileUploaderInput.click();
+    });
+
+    uploadDropzone?.addEventListener('click', (e) => {
+      if (e.target !== browseFilesBtn) {
+        fileUploaderInput.click();
+      }
+    });
+
+    // Drag events
+    uploadDropzone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadDropzone.classList.add('dragover');
+    });
+
+    uploadDropzone?.addEventListener('dragleave', () => {
+      uploadDropzone.classList.remove('dragover');
+    });
+
+    uploadDropzone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadDropzone.classList.remove('dragover');
+      const files = e.dataTransfer?.files;
+      if (files) handleFileUpload(files[0]);
+    });
+
+    fileUploaderInput?.addEventListener('change', () => {
+      const files = fileUploaderInput.files;
+      if (files) handleFileUpload(files[0]);
+    });
+
+    // File upload logic
+    const handleFileUpload = async (file: File) => {
+      if (!file) return;
+
+      const formatBytesLocal = (bytes: number) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+      };
+
+      // Fill in title field with file name if it's currently empty
+      if (!materialTitle.value.trim()) {
+        const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+        materialTitle.value = cleanName.replace(/[-_]/g, ' ');
+      }
+
+      // Display progress panel
+      uploadDropzone!.classList.add('hidden');
+      uploadProgressCard!.classList.remove('hidden');
+      uploadedFilename!.textContent = file.name;
+      uploadedFilesize!.textContent = formatBytesLocal(file.size);
+      uploadProgressFill!.style.width = '15%';
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('noteId', generatedNoteId);
+
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/upload', true);
+
+        // Upload progress listener
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            uploadProgressFill!.style.width = `${percent}%`;
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status === 201) {
+            const data = JSON.parse(xhr.responseText);
+            uploadedFileId = data.attachment.id;
+            uploadedFilenameText = data.attachment.filename;
+            uploadedFileMime = data.attachment.mime_type;
+            uploadProgressFill!.style.width = '100%';
+            uploadProgressFill!.style.backgroundColor = 'var(--success)';
+          } else {
+            const data = JSON.parse(xhr.responseText);
+            alert(`Upload failed: ${data.error}`);
+            resetUploadZone();
+          }
+        };
+
+        xhr.onerror = () => {
+          alert('Upload failed due to connection error.');
+          resetUploadZone();
+        };
+
+        xhr.send(formData);
+      } catch (err) {
+        console.error(err);
+        resetUploadZone();
+      }
+    };
+
+    const resetUploadZone = () => {
+      uploadedFileId = null;
+      uploadProgressCard?.classList.add('hidden');
+      uploadDropzone?.classList.remove('hidden');
+      fileUploaderInput.value = '';
+    };
+
+    removeUploadedFileBtn?.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (uploadedFileId) {
+        try {
+          const res = await fetch(`/api/files/${uploadedFileId}`, { method: 'DELETE' });
+          if (res.ok) {
+            resetUploadZone();
+          } else {
+            alert('Failed to remove uploaded file');
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      } else {
+        resetUploadZone();
+      }
+    });
+
+    // Save Material submission
+    const saveMaterialBtn = document.getElementById('save-material-btn');
+    saveMaterialBtn?.addEventListener('click', async (e) => {
+      e.preventDefault();
+
+      const title = materialTitle.value.trim();
+      const description = (document.getElementById('material-description') as HTMLTextAreaElement).value;
+      const collectionId = (document.getElementById('material-collection') as HTMLSelectElement).value || null;
+      const category = (document.getElementById('material-category') as HTMLInputElement).value.trim();
+      const semester = (document.getElementById('material-semester') as HTMLInputElement).value.trim();
+      const topic = (document.getElementById('material-topic') as HTMLInputElement).value.trim();
+      const tagsString = (document.getElementById('material-tags') as HTMLInputElement).value;
+      const isFavorite = (document.getElementById('material-favorite') as HTMLInputElement).checked;
+      const isPinned = (document.getElementById('material-pinned') as HTMLInputElement).checked;
+
+      if (!title) {
+        alert('Resource Title is required.');
         return;
       }
 
-      // 1. Render marked markdown
-      // @ts-ignore
-      let html = typeof marked !== 'undefined' ? marked.parse(markdownText) : markdownText;
-
-      // 2. Simple LaTeX Math parsing
-      // Search for $$equation$$ and replace with KaTeX rendered HTML
-      html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match: string, equation: string) => {
-        try {
-          // @ts-ignore
-          return `<div class="math-display">${katex.renderToString(equation, { displayMode: true, throwOnError: false })}</div>`;
-        } catch (e) {
-          return match;
-        }
-      });
-
-      // Search for $equation$ and replace with inline KaTeX HTML
-      html = html.replace(/\$([^$\n]+?)\$/g, (match: string, equation: string) => {
-        try {
-          // @ts-ignore
-          return `<span class="math-inline">${katex.renderToString(equation, { displayMode: false, throwOnError: false })}</span>`;
-        } catch (e) {
-          return match;
-        }
-      });
-
-      previewBody.innerHTML = html;
-    };
-
-    noteContent?.addEventListener('input', updatePreview);
-    noteTitle?.addEventListener('input', updatePreview);
-
-    // Save Note logic
-    const saveNoteBtn = document.getElementById('save-note-btn');
-    saveNoteBtn?.addEventListener('click', async (e) => {
-      e.preventDefault();
-
-      const title = noteTitle.value.trim();
-      const content = noteContent.value;
-      const collectionId = (document.getElementById('note-collection') as HTMLSelectElement).value || null;
-      const category = (document.getElementById('note-category') as HTMLInputElement).value.trim();
-      const semester = (document.getElementById('note-semester') as HTMLInputElement).value.trim();
-      const topic = (document.getElementById('note-topic') as HTMLInputElement).value.trim();
-      const tagsString = (document.getElementById('note-tags') as HTMLInputElement).value;
-      const isFavorite = (document.getElementById('note-favorite') as HTMLInputElement).checked;
-      const isPinned = (document.getElementById('note-pinned') as HTMLInputElement).checked;
-
-      if (!title) {
-        alert('Please enter a note title.');
+      if (resourceType === 'file' && !uploadedFileId) {
+        alert('Please drop or select a file to upload first.');
         return;
+      }
+
+      let shareUrl = '';
+      if (resourceType === 'link') {
+        shareUrl = (document.getElementById('material-url') as HTMLInputElement).value.trim();
+        if (!shareUrl) {
+          alert('Please enter the URL link.');
+          return;
+        }
       }
 
       // Convert tags
@@ -499,21 +738,29 @@ try {
         .map((t) => t.trim())
         .filter((t) => t.length > 0);
 
+      // Construct markdown note body representing the content.
+      // If it is a file upload: we represent it in note content as standard text description
+      // If it is a URL link: we embed the naked URL in the note body, which the link synchronizer automatically extracts!
+      let noteBody = description || '';
+      if (resourceType === 'link') {
+        noteBody = `${shareUrl}\n\n${noteBody}`;
+      }
+
       try {
-        saveNoteBtn.setAttribute('disabled', 'true');
-        const spanText = saveNoteBtn.querySelector('span');
-        if (spanText) spanText.textContent = 'Saving...';
+        saveMaterialBtn.setAttribute('disabled', 'true');
+        saveMaterialBtn.textContent = 'Saving Resource...';
 
         const res = await fetch('/api/notes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            id: generatedNoteId, // Bind the same ID used in file uploading!
             title,
-            content,
+            content: noteBody,
             collection_id: collectionId,
-            category,
-            semester,
-            topic,
+            category: category || 'General',
+            semester: semester || 'All',
+            topic: topic || 'General',
             is_favorite: isFavorite,
             is_pinned: isPinned,
             tags,
@@ -523,16 +770,17 @@ try {
         const data = await res.json();
 
         if (res.ok) {
-          window.location.href = `/notes/${data.id}`;
+          window.location.href = `/notes/${generatedNoteId}`;
         } else {
-          alert(data.error || 'Failed to save note');
-          saveNoteBtn.removeAttribute('disabled');
-          if (spanText) spanText.textContent = 'Save Note';
+          alert(data.error || 'Failed to share material');
+          saveMaterialBtn.removeAttribute('disabled');
+          saveMaterialBtn.textContent = 'Share Resource';
         }
       } catch (err) {
         console.error(err);
-        alert('An error occurred while saving.');
-        saveNoteBtn.removeAttribute('disabled');
+        alert('An error occurred during submission.');
+        saveMaterialBtn.removeAttribute('disabled');
+        saveMaterialBtn.textContent = 'Share Resource';
       }
     });
   </script>

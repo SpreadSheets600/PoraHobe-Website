@@ -159,7 +159,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return new Response(JSON.stringify({ error: 'Title is required' }), { status: 400 });
     }
 
-    const noteId = crypto.randomUUID();
+    const noteId = body.id || crypto.randomUUID();
     const now = Date.now();
 
     await db

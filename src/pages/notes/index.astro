@@ -43,7 +43,11 @@ try {
 // 2. Build Notes Query
 let query = `
   SELECT n.*, c.name as collection_name,
-  (SELECT group_concat(t.name) FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tags
+  (SELECT group_concat(t.name) FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tags,
+  (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
+  (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
+  (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
+  (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
   FROM notes n
   LEFT JOIN collections c ON n.collection_id = c.id
   WHERE n.user_id = ?
@@ -110,6 +114,10 @@ try {
     tags: r.tags ? r.tags.split(',') : [],
     is_favorite: !!r.is_favorite,
     is_pinned: !!r.is_pinned,
+    attachment_count: r.attachment_count || 0,
+    first_attachment_mime: r.first_attachment_mime || '',
+    link_count: r.link_count || 0,
+    first_link_type: r.first_link_type || '',
   }));
 } catch (e) {
   console.error('Failed to load notes list:', e);
@@ -215,6 +223,24 @@ const getCleanSnippet = (content: string) => {
               <div class="note-card-badges">
                 {note.category && <span class="badge badge-category">{note.category}</span>}
                 {note.semester && <span class="badge badge-semester">{note.semester}</span>}
+                
+                {note.attachment_count > 0 ? (
+                  note.first_attachment_mime === 'application/pdf' ? (
+                    <span class="badge badge-resource pdf">📄 PDF</span>
+                  ) : (
+                    <span class="badge badge-resource image">🖼️ Image</span>
+                  )
+                ) : note.link_count > 0 ? (
+                  note.first_link_type === 'youtube' ? (
+                    <span class="badge badge-resource youtube">🎥 Video</span>
+                  ) : note.first_link_type === 'drive' ? (
+                    <span class="badge badge-resource drive">📁 Drive</span>
+                  ) : (
+                    <span class="badge badge-resource link">🔗 Link</span>
+                  )
+                ) : (
+                  <span class="badge badge-resource note">📝 Note</span>
+                )}
               </div>
               <div class="note-card-actions">
                 {note.is_pinned && <span class="badge-icon pin" title="Pinned">📌</span>}
@@ -243,6 +269,42 @@ const getCleanSnippet = (content: string) => {
   </div>
 
   <style>
+    .badge-resource {
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--card-border);
+    }
+    
+    .badge-resource.pdf {
+      background: rgba(239, 68, 68, 0.08);
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.2);
+    }
+    
+    .badge-resource.image {
+      background: rgba(16, 185, 129, 0.08);
+      color: #10b981;
+      border-color: rgba(16, 185, 129, 0.2);
+    }
+    
+    .badge-resource.youtube {
+      background: rgba(244, 63, 94, 0.08);
+      color: #f43f5e;
+      border-color: rgba(244, 63, 94, 0.2);
+    }
+    
+    .badge-resource.drive {
+      background: rgba(59, 130, 246, 0.08);
+      color: #3b82f6;
+      border-color: rgba(59, 130, 246, 0.2);
+    }
+    
+    .badge-resource.link {
+      background: rgba(245, 158, 11, 0.08);
+      color: #f59e0b;
+      border-color: rgba(245, 158, 11, 0.2);
+    }
+
     .archive-wrapper {
       max-width: 1200px;
       margin: 0 auto;

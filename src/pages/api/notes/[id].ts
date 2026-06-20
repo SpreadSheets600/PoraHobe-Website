@@ -257,12 +257,11 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
     ).results;
 
     if (attachments && attachments.length > 0) {
-      const runtimeEnv = locals.runtime?.env || {};
-      const s3Endpoint = runtimeEnv.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
-      const s3SecretKey = runtimeEnv.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
-      const s3AccessKeyId = runtimeEnv.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
-      const s3BucketName = runtimeEnv.S3_BUCKET_NAME || 'CityPulse';
-      const s3Region = runtimeEnv.S3_REGION_NAME || 'eu-central-003';
+      const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
+      const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
+      const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
+      const s3BucketName = env.S3_BUCKET_NAME || 'CityPulse';
+      const s3Region = env.S3_REGION_NAME || 'eu-central-003';
 
       const s3 = new S3Client({
         endpoint: s3Endpoint,
