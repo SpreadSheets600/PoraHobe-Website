@@ -91,7 +91,7 @@ if (db && user) {
           </div>
 
           <div class="user-profile">
-            <div class="avatar">{user.username[0].toUpperCase()}</div>
+            <img src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${user.username}`} class="avatar" alt={user.username} />
             <div class="user-info">
               <span class="username">{user.username}</span>
               <span class="role">{user.role}</span>
@@ -158,6 +158,11 @@ if (db && user) {
                           </svg>
                           <span class="folder-name">{folder.name}</span>
                         </a>
+                        <button class="delete-folder-btn-inline" data-folder-id={folder.id} title="Delete folder">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                          </svg>
+                        </button>
                       </div>
                       {folder.children && folder.children.length > 0 && (
                         <ul class="nested-tree-list">
@@ -171,6 +176,11 @@ if (db && user) {
                                   </svg>
                                   <span class="folder-name">{child.name}</span>
                                 </a>
+                                <button class="delete-folder-btn-inline" data-folder-id={child.id} title="Delete folder">
+                                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                                  </svg>
+                                </button>
                               </div>
                             </li>
                           ))}
@@ -319,14 +329,12 @@ if (db && user) {
       .avatar {
         width: 36px;
         height: 36px;
-        background: var(--accent-primary);
-        color: white;
+        background: var(--bg-tertiary);
+        border: 1.5px solid var(--accent-primary);
+        padding: 2px;
         border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 0.95rem;
+        display: block;
+        object-fit: cover;
       }
 
       .user-info {
@@ -458,6 +466,27 @@ if (db && user) {
 
       .tree-row:hover {
         background: var(--bg-tertiary);
+      }
+
+      .delete-folder-btn-inline {
+        opacity: 0;
+        cursor: pointer;
+        padding: 2px 4px;
+        border-radius: var(--border-radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+      }
+
+      .tree-row:hover .delete-folder-btn-inline {
+        opacity: 1;
+      }
+
+      .delete-folder-btn-inline:hover {
+        color: var(--danger);
+        background: var(--bg-secondary);
       }
 
       .chevron-placeholder {
@@ -822,6 +851,43 @@ if (db && user) {
           }
         });
       }
+
+      // Delete folder handler
+      const deleteFolderBtns = document.querySelectorAll('.delete-folder-btn-inline');
+      deleteFolderBtns.forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const folderId = btn.getAttribute('data-folder-id');
+          if (!folderId) return;
+
+          if (confirm('Are you sure you want to delete this folder? Any sub-folders will also be deleted.')) {
+            try {
+              const res = await fetch('/api/collections', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: folderId }),
+              });
+              if (res.ok) {
+                // If we are currently viewing this collection page, redirect to notes / dashboard
+                const urlParams = new URLSearchParams(window.location.search);
+                const currentCollectionId = urlParams.get('collection_id');
+                if (currentCollectionId === folderId) {
+                  window.location.href = '/notes';
+                } else {
+                  window.location.reload();
+                }
+              } else {
+                const data = await res.json();
+                alert(data.error || 'Failed to delete folder');
+              }
+            } catch (err) {
+              console.error('Delete folder error:', err);
+              alert('An error occurred while deleting the folder.');
+            }
+          }
+        });
+      });
 
       // Mobile sidebar toggle
       const mobileOpenBtn = document.getElementById('mobile-open-btn');
