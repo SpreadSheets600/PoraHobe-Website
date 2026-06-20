@@ -5,7 +5,7 @@ compatibility_flags = [ "nodejs_compat" ]
 [[d1_databases]]
 binding = "DB"
 database_name = "porahobe-db"
-database_id = "local-db-id"
+database_id = "4338e77d-e879-4c20-a69b-4c1fe1423130"
 
 [[kv_namespaces]]
 binding = "SESSION"
