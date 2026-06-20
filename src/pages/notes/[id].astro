@@ -288,7 +288,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
                     <a href={`/api/files/${img.id}`} download class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">Download Image</a>
                   </div>
                   <div class="image-preview-frame">
-                    <img src={`/api/files/${img.id}`} alt={img.filename} class="zoomable-preview" style="cursor: zoom-in;" />
+                    <img src={`/api/files/${img.id}`} alt={img.filename} class="preview-image-img" />
                   </div>
                 </div>
               ))}
@@ -487,13 +487,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
     </div>
   </div>
 
-  <!-- Zoom View Image Overlay -->
-  <div id="image-zoom-overlay" class="modal-overlay hidden">
-    <div class="zoom-image-container">
-      <img id="zoomed-image" src="" alt="Zoomed View" />
-      <button id="close-zoom-btn">×</button>
-    </div>
-  </div>
+
 
   <style>
     /* Preview Hub Styling */
@@ -1213,28 +1207,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       gap: 12px;
     }
 
-    /* Zoom image modal overlay */
-    .zoom-image-container {
-      position: relative;
-      max-width: 90vw;
-      max-height: 90vh;
-    }
 
-    .zoom-image-container img {
-      max-width: 100%;
-      max-height: 90vh;
-      border-radius: var(--border-radius-md);
-      box-shadow: var(--shadow-lg);
-    }
-
-    #close-zoom-btn {
-      position: absolute;
-      top: -40px;
-      right: 0;
-      color: white;
-      font-size: 2.5rem;
-      cursor: pointer;
-    }
 
     /* Focus Mode active styles */
     body.focus-active .sidebar,
@@ -1271,14 +1244,8 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
     .prose img {
       max-width: 100%;
       border-radius: var(--border-radius-md);
-      cursor: zoom-in;
-      transition: transform var(--transition-fast);
       margin: 1.5em 0;
       border: 1px solid var(--card-border);
-    }
-
-    .prose img:hover {
-      transform: scale(1.01);
     }
 
     /* Edit Split layout */
@@ -1386,30 +1353,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
         });
       });
 
-      // Bind click triggers for image zoom viewing
-      const imgs = viewBodyRendered.querySelectorAll('img');
-      const zoomOverlay = document.getElementById('image-zoom-overlay');
-      const zoomedImg = document.getElementById('zoomed-image') as HTMLImageElement;
-
-      imgs.forEach((img) => {
-        img.addEventListener('click', () => {
-          if (zoomOverlay && zoomedImg) {
-            zoomedImg.src = img.src;
-            zoomOverlay.classList.remove('hidden');
-          }
-        });
-      });
     };
-
-    // Close zoom modal overlay
-    const zoomOverlay = document.getElementById('image-zoom-overlay');
-    const closeZoomBtn = document.getElementById('close-zoom-btn');
-    if (closeZoomBtn && zoomOverlay) {
-      closeZoomBtn.addEventListener('click', () => zoomOverlay.classList.add('hidden'));
-      zoomOverlay.addEventListener('click', (e) => {
-        if (e.target === zoomOverlay) zoomOverlay.classList.add('hidden');
-      });
-    }
 
     // Preview Hub Tabs toggle logic
     const previewTabs = document.querySelectorAll('.preview-tab-btn');
