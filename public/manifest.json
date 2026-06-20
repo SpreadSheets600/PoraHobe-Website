@@ -1,0 +1,17 @@
+{
+  "name": "PoraHobe Notes & Study Material",
+  "short_name": "PoraHobe",
+  "description": "Private-first Notes & Study Material Platform optimized for Cloudflare",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#8b5cf6",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
