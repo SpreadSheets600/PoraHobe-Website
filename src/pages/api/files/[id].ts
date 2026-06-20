@@ -1,6 +1,21 @@
 import type { APIRoute } from 'astro';
 import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { FetchHttpHandler, streamCollector } from '@smithy/fetch-http-handler';
 import { env } from 'cloudflare:workers';
+
+function createS3Client(s3Endpoint: string, s3Region: string, s3AccessKeyId: string, s3SecretKey: string) {
+  return new S3Client({
+    requestHandler: new FetchHttpHandler(),
+    streamCollector,
+    endpoint: s3Endpoint,
+    region: s3Region,
+    credentials: {
+      accessKeyId: s3AccessKeyId,
+      secretAccessKey: s3SecretKey,
+    },
+    forcePathStyle: true,
+  });
+}
 
 export const GET: APIRoute = async ({ params, locals }) => {
   try {
@@ -41,16 +56,8 @@ export const GET: APIRoute = async ({ params, locals }) => {
       return new Response('Forbidden', { status: 403 });
     }
 
-    // Initialize S3 client
-    const s3 = new S3Client({
-      endpoint: s3Endpoint,
-      region: s3Region,
-      credentials: {
-        accessKeyId: s3AccessKeyId,
-        secretAccessKey: s3SecretKey,
-      },
-      forcePathStyle: true,
-    });
+    // Initialize S3 client with browser-compatible request handler
+    const s3 = createS3Client(s3Endpoint, s3Region, s3AccessKeyId, s3SecretKey);
 
     const command = new GetObjectCommand({
       Bucket: s3BucketName,
@@ -78,12 +85,10 @@ export const GET: APIRoute = async ({ params, locals }) => {
       headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(attachment.filename)}"`);
     }
 
-    // Convert S3 Body stream to Web Stream if available (standard on Cloudflare Workers)
-    const bodyStream = typeof (fileObject.Body as any).transformToWebStream === 'function'
-      ? (fileObject.Body as any).transformToWebStream()
-      : fileObject.Body;
+    // The body from the S3 SDK with FetchHttpHandler is already a ReadableStream
+    const bodyStream = fileObject.Body as ReadableStream;
 
-    return new Response(bodyStream as ReadableStream, {
+    return new Response(bodyStream, {
       status: 200,
       headers,
     });
@@ -134,15 +139,7 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
     }
 
     // Initialize S3 client
-    const s3 = new S3Client({
-      endpoint: s3Endpoint,
-      region: s3Region,
-      credentials: {
-        accessKeyId: s3AccessKeyId,
-        secretAccessKey: s3SecretKey,
-      },
-      forcePathStyle: true,
-    });
+    const s3 = createS3Client(s3Endpoint, s3Region, s3AccessKeyId, s3SecretKey);
 
     // Delete object from Backblaze B2/S3
     try {

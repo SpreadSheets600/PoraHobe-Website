@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { logActivity } from '../../utils/db';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { FetchHttpHandler, streamCollector } from '@smithy/fetch-http-handler';
 import { env } from 'cloudflare:workers';
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -53,15 +54,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const fileKey = `users/${user.id}/notes/${noteId}/${attachmentId}-${sanitizedFilename}`;
 
-    // Initialize modular AWS S3 client
+    // Initialize S3 client with explicit browser-compatible request handler
     const s3 = new S3Client({
+      requestHandler: new FetchHttpHandler(),
+      streamCollector,
       endpoint: s3Endpoint,
       region: s3Region,
       credentials: {
         accessKeyId: s3AccessKeyId,
         secretAccessKey: s3SecretKey,
       },
-      forcePathStyle: true, // Required for Backblaze B2 S3 API compat
+      forcePathStyle: true,
     });
 
     const fileBuffer = await file.arrayBuffer();
@@ -111,6 +114,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   } catch (error: any) {
     console.error('File Upload Error:', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    const message = error?.message || error?.toString() || 'Unknown error';
+    return new Response(JSON.stringify({ error: message }), { status: 500 });
   }
 };

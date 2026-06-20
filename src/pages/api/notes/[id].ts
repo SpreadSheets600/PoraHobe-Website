@@ -3,6 +3,7 @@ import { logActivity } from '../../../utils/db';
 import { syncNoteLinks, syncBacklinks } from '../../../utils/links';
 import { env } from 'cloudflare:workers';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { FetchHttpHandler, streamCollector } from '@smithy/fetch-http-handler';
 
 // Helper to sync note tags
 async function syncNoteTags(
@@ -264,6 +265,8 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
       const s3Region = env.S3_REGION_NAME || 'eu-central-003';
 
       const s3 = new S3Client({
+        requestHandler: new FetchHttpHandler(),
+        streamCollector,
         endpoint: s3Endpoint,
         region: s3Region,
         credentials: {
