@@ -7,7 +7,4 @@ binding = "DB"
 database_name = "porahobe-db"
 database_id = "local-db-id"
 
-[[r2_buckets]]
-binding = "R2"
-bucket_name = "porahobe-r2"
-preview_bucket_name = "porahobe-r2"
+# Removed R2 bindings to use S3 (Backblaze B2) instead.
