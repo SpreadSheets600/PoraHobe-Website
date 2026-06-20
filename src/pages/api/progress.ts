@@ -50,3 +50,37 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return new Response(JSON.stringify({ error: error.message }), { status: 500 });
   }
 };
+
+// Clear all watch progress
+export const DELETE: APIRoute = async ({ locals }) => {
+  try {
+    const db = env.DB;
+    const user = locals.user;
+
+    if (!db || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    }
+
+    await db
+      .prepare(
+        `UPDATE links 
+         SET watch_progress = 0 
+         WHERE id IN (
+           SELECT l.id 
+           FROM links l 
+           JOIN notes n ON l.note_id = n.id 
+           WHERE n.user_id = ?
+         )`
+      )
+      .bind(user.id)
+      .run();
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error: any) {
+    console.error('Clear Progress API Error:', error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+};

@@ -163,6 +163,43 @@ try {
 } catch (e) {
   console.error('Failed to load tags:', e);
 }
+
+// Helper to get Lucide SVG string for material type
+const getIconHtml = (note: any, size = 16) => {
+  if (note.attachment_count > 0) {
+    if (note.first_attachment_mime === 'application/pdf') {
+      return `<svg class="lucide lucide-file-text" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+    }
+    return `<svg class="lucide lucide-image" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
+  }
+  if (note.link_count > 0) {
+    if (note.first_link_type === 'youtube') {
+      return `<svg class="lucide lucide-video" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>`;
+    }
+    if (note.first_link_type === 'drive') {
+      return `<svg class="lucide lucide-folder" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+    }
+    return `<svg class="lucide lucide-link" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
+  }
+  return `<svg class="lucide lucide-file" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>`;
+};
+
+// Helper to get Activity Log Lucide SVG
+const getActivityIconHtml = (action: string) => {
+  if (action.includes('note')) {
+    return `<svg class="lucide lucide-file-text" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+  }
+  if (action.includes('collection')) {
+    return `<svg class="lucide lucide-folder" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+  }
+  if (action.includes('file') || action.includes('upload')) {
+    return `<svg class="lucide lucide-paperclip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
+  }
+  if (action.includes('login') || action.includes('auth')) {
+    return `<svg class="lucide lucide-key" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3M17 6l3 3"/></svg>`;
+  }
+  return `<svg class="lucide lucide-zap" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`;
+};
 ---
 
 <Layout title="Dashboard - PoraHobe">
@@ -170,7 +207,7 @@ try {
     <!-- Welcome banner -->
     <div class="welcome-banner bento-card">
       <div class="welcome-text">
-        <h2>Welcome back, {user.username}! ✨</h2>
+        <h2>Welcome back, {user.username}! <svg class="lucide lucide-sparkles" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; color: var(--warning);"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/><path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5Z"/><path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1Z"/></svg></h2>
         <p>Your workspace is synced and ready. Here is a summary of your shared study materials and indexed resources.</p>
       </div>
       <div class="quick-actions">
@@ -225,13 +262,7 @@ try {
           <div class="notes-grid">
             {pinnedNotes.map((note) => (
               <a href={`/notes/${note.id}`} class="note-mini-card">
-                <span class="pin-icon">
-                  {note.attachment_count > 0 ? (
-                    note.first_attachment_mime === 'application/pdf' ? '📄' : '🖼️'
-                  ) : note.link_count > 0 ? (
-                    note.first_link_type === 'youtube' ? '🎥' : note.first_link_type === 'drive' ? '📁' : '🔗'
-                  ) : '📝'}
-                </span>
+                <span class="pin-icon" set:html={getIconHtml(note, 18)}></span>
                 <div class="note-mini-card-details">
                   <span class="note-title">{note.title}</span>
                   <span class="note-meta">{note.category || 'General'} • {note.semester || 'All'}</span>
@@ -256,13 +287,7 @@ try {
               <li>
                 <a href={`/notes/${note.id}`} class="list-item-link">
                   <div class="item-title-wrapper">
-                    <span class="item-icon-box">
-                      {note.attachment_count > 0 ? (
-                        note.first_attachment_mime === 'application/pdf' ? '📄' : '🖼️'
-                      ) : note.link_count > 0 ? (
-                        note.first_link_type === 'youtube' ? '🎥' : note.first_link_type === 'drive' ? '📁' : '🔗'
-                      ) : '📝'}
-                    </span>
+                    <span class="item-icon-box" set:html={getIconHtml(note, 15)}></span>
                     <span class="item-title">{note.title}</span>
                   </div>
                   <span class="item-time">{new Date(note.updated_at).toLocaleDateString()}</span>
@@ -287,13 +312,7 @@ try {
               <li>
                 <a href={`/notes/${note.id}`} class="list-item-link">
                   <div class="item-title-wrapper">
-                    <span class="item-icon-box">
-                      {note.attachment_count > 0 ? (
-                        note.first_attachment_mime === 'application/pdf' ? '📄' : '🖼️'
-                      ) : note.link_count > 0 ? (
-                        note.first_link_type === 'youtube' ? '🎥' : note.first_link_type === 'drive' ? '📁' : '🔗'
-                      ) : '📝'}
-                    </span>
+                    <span class="item-icon-box" set:html={getIconHtml(note, 15)}></span>
                     <span class="item-title">{note.title}</span>
                   </div>
                   <span class="item-tag">{note.category || 'General'}</span>
@@ -306,7 +325,10 @@ try {
 
       <!-- Recently Watched Videos -->
       <div class="bento-card col-span-6">
-        <h3>Recently Watched Videos</h3>
+        <div class="card-header">
+          <h3>Recently Watched Videos</h3>
+          <a href="/notes/history" class="view-all-link">View all</a>
+        </div>
         {watchProgressVideos.length === 0 ? (
           <div class="empty-state">No video watch progress found. Embed YouTube videos inside notes.</div>
         ) : (
@@ -325,7 +347,11 @@ try {
                     {video.thumbnail_url ? (
                       <img src={video.thumbnail_url} alt={video.title || 'Video'} loading="lazy" />
                     ) : (
-                      <div class="thumb-fallback">▶</div>
+                      <div class="thumb-fallback">
+                        <svg class="lucide" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                        </svg>
+                      </div>
                     )}
                     <span class="progress-badge">{formattedProgress}</span>
                   </div>
@@ -360,16 +386,9 @@ try {
                 timeStr = `${Math.floor(diffMins / 1440)}d ago`;
               }
 
-              // Simple icon based on action
-              let icon = '⚡';
-              if (log.action.includes('note')) icon = '📝';
-              if (log.action.includes('collection')) icon = '📁';
-              if (log.action.includes('file')) icon = '📎';
-              if (log.action.includes('login')) icon = '🔑';
-
               return (
                 <div class="timeline-item">
-                  <span class="timeline-icon">{icon}</span>
+                  <span class="timeline-icon" set:html={getActivityIconHtml(log.action)}></span>
                   <div class="timeline-content">
                     <p class="timeline-text">{log.details}</p>
                     <span class="timeline-time">{timeStr}</span>

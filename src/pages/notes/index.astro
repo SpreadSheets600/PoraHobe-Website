@@ -226,25 +226,51 @@ const getCleanSnippet = (content: string) => {
                 
                 {note.attachment_count > 0 ? (
                   note.first_attachment_mime === 'application/pdf' ? (
-                    <span class="badge badge-resource pdf">📄 PDF</span>
+                    <span class="badge badge-resource pdf">
+                      <svg class="lucide lucide-file-text" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+                      PDF
+                    </span>
                   ) : (
-                    <span class="badge badge-resource image">🖼️ Image</span>
+                    <span class="badge badge-resource image">
+                      <svg class="lucide lucide-image" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                      Image
+                    </span>
                   )
                 ) : note.link_count > 0 ? (
                   note.first_link_type === 'youtube' ? (
-                    <span class="badge badge-resource youtube">🎥 Video</span>
+                    <span class="badge badge-resource youtube">
+                      <svg class="lucide lucide-video" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
+                      Video
+                    </span>
                   ) : note.first_link_type === 'drive' ? (
-                    <span class="badge badge-resource drive">📁 Drive</span>
+                    <span class="badge badge-resource drive">
+                      <svg class="lucide lucide-folder" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                      Drive
+                    </span>
                   ) : (
-                    <span class="badge badge-resource link">🔗 Link</span>
+                    <span class="badge badge-resource link">
+                      <svg class="lucide lucide-link" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                      Link
+                    </span>
                   )
                 ) : (
-                  <span class="badge badge-resource note">📝 Note</span>
+                  <span class="badge badge-resource note">
+                    <svg class="lucide lucide-file" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+                    Note
+                  </span>
                 )}
               </div>
               <div class="note-card-actions">
-                {note.is_pinned && <span class="badge-icon pin" title="Pinned">📌</span>}
-                {note.is_favorite && <span class="badge-icon favorite" title="Bookmarked">★</span>}
+                {note.is_pinned && (
+                  <span class="badge-icon pin" title="Pinned">
+                    <svg class="lucide lucide-pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle;"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.5A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.18L5.78 14c-.5.6-.78 1.37-.78 2.18Z"/></svg>
+                  </span>
+                )}
+                {note.is_favorite && (
+                  <span class="badge-icon favorite" title="Bookmarked">
+                    <svg class="lucide lucide-star" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning); display: inline-block; vertical-align: middle;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                  </span>
+                )}
               </div>
             </div>
             
