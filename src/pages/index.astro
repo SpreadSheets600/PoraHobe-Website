@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import type { Note, LinkItem, ActivityLog } from "../utils/db";
 import { env } from "cloudflare:workers";
+import { formatCategoryName } from "../utils/categories";
 
 const user = Astro.locals.user;
 const db = env.DB;
@@ -331,7 +332,7 @@ const getActivityIconHtml = (action: string) => {
                                             {note.title}
                                         </span>
                                         <span class="note-meta">
-                                            {note.category || "General"} •{" "}
+                                            {formatCategoryName(note.category) || "General"} •{" "}
                                             {note.semester || "All"}
                                         </span>
                                     </div>
@@ -416,7 +417,7 @@ const getActivityIconHtml = (action: string) => {
                                             </span>
                                         </div>
                                         <span class="item-tag">
-                                            {note.category || "General"}
+                                            {formatCategoryName(note.category) || "General"}
                                         </span>
                                     </a>
                                 </li>

@@ -2,6 +2,8 @@
 import Layout from '../../layouts/Layout.astro';
 import type { Note } from '../../utils/db';
 import { env } from 'cloudflare:workers';
+import { formatCategoryName } from '../../utils/categories';
+
 
 const user = Astro.locals.user;
 const db = env.DB;
@@ -221,7 +223,7 @@ const getCleanSnippet = (content: string) => {
           <div class="bento-card col-span-4 note-card interactive">
             <div class="note-card-header">
               <div class="note-card-badges">
-                {note.category && <span class="badge badge-category">{note.category}</span>}
+                {note.category && <span class="badge badge-category">{formatCategoryName(note.category)}</span>}
                 {note.semester && <span class="badge badge-semester">{note.semester}</span>}
                 
                 {note.attachment_count > 0 ? (

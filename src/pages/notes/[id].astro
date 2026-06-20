@@ -2,6 +2,7 @@
 import Layout from '../../layouts/Layout.astro';
 import type { Collection } from '../../utils/db';
 import { env } from 'cloudflare:workers';
+import { formatCategoryName } from '../../utils/categories';
 
 const user = Astro.locals.user;
 const db = env.DB;
@@ -241,7 +242,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
         <div class="note-meta-header">
           <h1 class="note-title-text" id="note-view-title">{note.title}</h1>
           <div class="note-metadata-tags">
-            {note.category && <span class="badge badge-category">{note.category}</span>}
+            {note.category && <span class="badge badge-category">{formatCategoryName(note.category)}</span>}
             {note.semester && <span class="badge badge-semester">{note.semester}</span>}
             {note.topic && <span class="badge badge-topic">Topic: {note.topic}</span>}
           </div>

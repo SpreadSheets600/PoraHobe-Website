@@ -2,6 +2,7 @@
 import Layout from '../../layouts/Layout.astro';
 import type { Collection } from '../../utils/db';
 import { env } from 'cloudflare:workers';
+import { toKebabCase, formatCategoryName } from '../../utils/categories';
 
 const user = Astro.locals.user;
 const db = env.DB;
@@ -22,21 +23,14 @@ try {
   console.error('Failed to load collections in creator:', e);
 }
 
-// Fetch pre-existing categories & semesters to provide autocomplete lists
+// Fetch pre-existing categories to populate the dropdown
 let existingCategories: string[] = [];
-let existingSemesters: string[] = [];
 try {
   const catRes = await db
     .prepare('SELECT DISTINCT category FROM notes WHERE user_id = ? AND category IS NOT NULL AND category != ""')
     .bind(user.id)
     .all();
   existingCategories = catRes.results.map((r: any) => r.category);
-
-  const semRes = await db
-    .prepare('SELECT DISTINCT semester FROM notes WHERE user_id = ? AND semester IS NOT NULL AND semester != ""')
-    .bind(user.id)
-    .all();
-  existingSemesters = semRes.results.map((r: any) => r.semester);
 } catch (e) {
   console.error(e);
 }
@@ -95,24 +89,28 @@ try {
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
             </svg>
-            <p class="upload-title">Drag & Drop your study file here</p>
+            <p class="upload-title">Drag &amp; Drop your study file here</p>
             <span class="upload-subtext">Supports PDF, PNG, JPG (Max 50MB)</span>
             <button type="button" class="btn btn-secondary btn-sm" id="browse-files-btn">Browse Files</button>
-            <input type="file" id="file-uploader-input" class="hidden-file-input" />
+            <input type="file" id="file-uploader-input" class="hidden-file-input" accept=".pdf,image/*" />
           </div>
 
-          <!-- File Upload Progress / Complete States -->
+          <!-- File Upload Progress Card -->
           <div class="upload-progress-card hidden" id="upload-progress-card">
-            <div class="file-icon">📎</div>
+            <div class="file-progress-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </div>
             <div class="file-details">
-              <span class="file-name-label" id="uploaded-filename">lecture-notes.pdf</span>
-              <span class="file-size-label" id="uploaded-filesize">2.4 MB</span>
-              <!-- progress animation -->
+              <div class="file-name-row">
+                <span class="file-name-label" id="uploaded-filename">file.pdf</span>
+                <span class="upload-percent" id="upload-status-percent">0%</span>
+              </div>
+              <span class="file-size-label" id="uploaded-filesize">–</span>
               <div class="progress-bar-track">
                 <div class="progress-bar-fill" id="upload-progress-fill"></div>
               </div>
             </div>
-            <button class="remove-file-btn" id="remove-uploaded-file-btn" title="Remove attachment">×</button>
+            <button class="remove-file-btn" id="remove-uploaded-file-btn" title="Remove">×</button>
           </div>
         </div>
 
@@ -146,22 +144,42 @@ try {
             </select>
           </div>
 
-          <!-- Category -->
+          <!-- Category dropdown -->
           <div class="form-group">
-            <label for="material-category">Category / Subject</label>
-            <input type="text" id="material-category" class="form-input" placeholder="e.g. Computer Science" list="categories-list" required />
-            <datalist id="categories-list">
-              {existingCategories.map((cat) => <option value={cat} />)}
-            </datalist>
+            <label for="material-category-select">Category / Subject</label>
+            <select id="material-category-select" class="form-select">
+              <option value="general">General</option>
+              {existingCategories
+                .filter(cat => cat && toKebabCase(cat) !== 'general')
+                .map((cat) => (
+                  <option value={toKebabCase(cat)}>{formatCategoryName(cat)}</option>
+                ))
+              }
+              <option value="__new__">+ Add New Category...</option>
+            </select>
           </div>
 
-          <!-- Semester -->
+          <!-- New Category inline input (hidden by default) -->
+          <div class="form-group hidden" id="new-category-input-group" style="margin-top: -12px;">
+            <label for="new-category-input">New Category Name</label>
+            <input type="text" id="new-category-input" class="form-input" placeholder="e.g. Computer Architecture" />
+            <span class="helper-text">Saved as: <code id="new-category-preview" style="color: var(--accent-primary); font-size: 0.8rem;">general</code></span>
+          </div>
+
+          <!-- Semester dropdown -->
           <div class="form-group">
-            <label for="material-semester">Semester</label>
-            <input type="text" id="material-semester" class="form-input" placeholder="e.g. Semester 3" list="semesters-list" />
-            <datalist id="semesters-list">
-              {existingSemesters.map((sem) => <option value={sem} />)}
-            </datalist>
+            <label for="material-semester-select">Semester</label>
+            <select id="material-semester-select" class="form-select">
+              <option value="All">All Semesters</option>
+              <option value="Semester 1">Semester 1</option>
+              <option value="Semester 2">Semester 2</option>
+              <option value="Semester 3">Semester 3</option>
+              <option value="Semester 4">Semester 4</option>
+              <option value="Semester 5">Semester 5</option>
+              <option value="Semester 6">Semester 6</option>
+              <option value="Semester 7">Semester 7</option>
+              <option value="Semester 8">Semester 8</option>
+            </select>
           </div>
 
           <!-- Topic -->
@@ -197,10 +215,41 @@ try {
     </div>
   </div>
 
-  
+  <style>
+    .file-progress-icon {
+      flex-shrink: 0;
+      color: var(--accent-primary);
+      display: flex;
+      align-items: center;
+    }
+
+    .file-name-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .upload-percent {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+      white-space: nowrap;
+      transition: color 0.2s;
+    }
+
+    .upload-percent.done {
+      color: #10b981;
+    }
+  </style>
 
   <script>
-    // Client-side state manager
+    // --- Helpers ---
+    function toKebabCase(str: string): string {
+      return str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    }
+
+    // Client-side state
     let resourceType: 'file' | 'link' = 'file';
     let uploadedFileId: string | null = null;
     let uploadedFilenameText = '';
@@ -210,8 +259,8 @@ try {
     const generatedNoteId = crypto.randomUUID();
 
     // Tab switches
-    const tabFileBtn = document.getElementById('tab-file-btn');
-    const tabLinkBtn = document.getElementById('tab-link-btn');
+    const tabFileBtn = document.getElementById('tab-file-btn') as HTMLButtonElement;
+    const tabLinkBtn = document.getElementById('tab-link-btn') as HTMLButtonElement;
     const fileUploadContainer = document.getElementById('file-upload-container');
     const urlShareContainer = document.getElementById('url-share-container');
 
@@ -233,31 +282,59 @@ try {
       fileUploadContainer?.classList.add('hidden');
     });
 
-    // Upload Dropzone selectors
-    const uploadDropzone = document.getElementById('upload-dropzone');
-    const browseFilesBtn = document.getElementById('browse-files-btn');
-    const fileUploaderInput = document.getElementById('file-uploader-input') as HTMLInputElement;
+    // --- Category dropdown logic ---
+    const categorySelect = document.getElementById('material-category-select') as HTMLSelectElement;
+    const newCategoryGroup = document.getElementById('new-category-input-group');
+    const newCategoryInput = document.getElementById('new-category-input') as HTMLInputElement;
+    const newCategoryPreview = document.getElementById('new-category-preview');
 
-    const uploadProgressCard = document.getElementById('upload-progress-card');
-    const uploadedFilename = document.getElementById('uploaded-filename');
-    const uploadedFilesize = document.getElementById('uploaded-filesize');
-    const uploadProgressFill = document.getElementById('upload-progress-fill');
-    const removeUploadedFileBtn = document.getElementById('remove-uploaded-file-btn');
-    
-    const materialTitle = document.getElementById('material-title') as HTMLInputElement;
-
-    // Trigger browse
-    browseFilesBtn?.addEventListener('click', () => {
-      fileUploaderInput.click();
-    });
-
-    uploadDropzone?.addEventListener('click', (e) => {
-      if (e.target !== browseFilesBtn) {
-        fileUploaderInput.click();
+    categorySelect?.addEventListener('change', () => {
+      if (categorySelect.value === '__new__') {
+        newCategoryGroup?.classList.remove('hidden');
+        newCategoryInput?.focus();
+      } else {
+        newCategoryGroup?.classList.add('hidden');
       }
     });
 
-    // Drag events
+    newCategoryInput?.addEventListener('input', () => {
+      const slug = toKebabCase(newCategoryInput.value);
+      if (newCategoryPreview) newCategoryPreview.textContent = slug || 'your-category';
+    });
+
+    // Resolve the final category value (always kebab-case for DB)
+    const getFinalCategory = (): string => {
+      if (categorySelect.value === '__new__') {
+        const raw = newCategoryInput.value.trim();
+        if (!raw) return 'general';
+        const slug = toKebabCase(raw);
+        // Check for case-insensitive duplicate in existing options
+        const existingMatch = Array.from(categorySelect.options).find(
+          (opt) => opt.value !== '__new__' && opt.value === slug
+        );
+        return existingMatch ? existingMatch.value : slug;
+      }
+      return categorySelect.value || 'general';
+    };
+
+    // Upload Dropzone
+    const uploadDropzone = document.getElementById('upload-dropzone');
+    const browseFilesBtn = document.getElementById('browse-files-btn');
+    const fileUploaderInput = document.getElementById('file-uploader-input') as HTMLInputElement;
+    const uploadProgressCard = document.getElementById('upload-progress-card');
+    const uploadedFilenameEl = document.getElementById('uploaded-filename');
+    const uploadedFilesizeEl = document.getElementById('uploaded-filesize');
+    const uploadProgressFill = document.getElementById('upload-progress-fill');
+    const uploadStatusPercent = document.getElementById('upload-status-percent');
+    const removeUploadedFileBtn = document.getElementById('remove-uploaded-file-btn');
+    const materialTitle = document.getElementById('material-title') as HTMLInputElement;
+
+    browseFilesBtn?.addEventListener('click', () => fileUploaderInput.click());
+
+    uploadDropzone?.addEventListener('click', (e) => {
+      if (e.target !== browseFilesBtn) fileUploaderInput.click();
+    });
+
     uploadDropzone?.addEventListener('dragover', (e) => {
       e.preventDefault();
       uploadDropzone.classList.add('dragover');
@@ -271,38 +348,50 @@ try {
       e.preventDefault();
       uploadDropzone.classList.remove('dragover');
       const files = e.dataTransfer?.files;
-      if (files) handleFileUpload(files[0]);
+      if (files?.[0]) handleFileUpload(files[0]);
     });
 
     fileUploaderInput?.addEventListener('change', () => {
       const files = fileUploaderInput.files;
-      if (files) handleFileUpload(files[0]);
+      if (files?.[0]) handleFileUpload(files[0]);
     });
 
-    // File upload logic
+    // Helper: set progress bar and percentage text
+    const setProgress = (percent: number, done = false) => {
+      if (uploadProgressFill) uploadProgressFill.style.width = `${percent}%`;
+      if (uploadStatusPercent) {
+        uploadStatusPercent.textContent = done ? '✓ Done' : `${percent}%`;
+        if (done) {
+          uploadStatusPercent.classList.add('done');
+          uploadProgressFill!.style.backgroundColor = '#10b981';
+        } else {
+          uploadStatusPercent.classList.remove('done');
+          uploadProgressFill!.style.backgroundColor = '';
+        }
+      }
+    };
+
+    const formatBytes = (bytes: number): string => {
+      if (bytes === 0) return '0 B';
+      const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    };
+
     const handleFileUpload = async (file: File) => {
       if (!file) return;
 
-      const formatBytesLocal = (bytes: number) => {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-      };
-
-      // Fill in title field with file name if it's currently empty
+      // Auto-fill title from filename
       if (!materialTitle.value.trim()) {
         const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
         materialTitle.value = cleanName.replace(/[-_]/g, ' ');
       }
 
-      // Display progress panel
       uploadDropzone!.classList.add('hidden');
       uploadProgressCard!.classList.remove('hidden');
-      uploadedFilename!.textContent = file.name;
-      uploadedFilesize!.textContent = formatBytesLocal(file.size);
-      uploadProgressFill!.style.width = '15%';
+      uploadedFilenameEl!.textContent = file.name;
+      uploadedFilesizeEl!.textContent = formatBytes(file.size);
+      setProgress(3);
 
       const formData = new FormData();
       formData.append('file', file);
@@ -312,11 +401,10 @@ try {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/api/upload', true);
 
-        // Upload progress listener
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            uploadProgressFill!.style.width = `${percent}%`;
+            const percent = Math.min(95, Math.round((e.loaded / e.total) * 95));
+            setProgress(percent);
           }
         };
 
@@ -326,17 +414,20 @@ try {
             uploadedFileId = data.attachment.id;
             uploadedFilenameText = data.attachment.filename;
             uploadedFileMime = data.attachment.mime_type;
-            uploadProgressFill!.style.width = '100%';
-            uploadProgressFill!.style.backgroundColor = 'var(--success)';
+            setProgress(100, true);
           } else {
-            const data = JSON.parse(xhr.responseText);
-            alert(`Upload failed: ${data.error}`);
+            try {
+              const data = JSON.parse(xhr.responseText);
+              alert(`Upload failed: ${data.error}`);
+            } catch {
+              alert('Upload failed.');
+            }
             resetUploadZone();
           }
         };
 
         xhr.onerror = () => {
-          alert('Upload failed due to connection error.');
+          alert('Upload failed due to a connection error.');
           resetUploadZone();
         };
 
@@ -349,6 +440,13 @@ try {
 
     const resetUploadZone = () => {
       uploadedFileId = null;
+      uploadedFilenameText = '';
+      uploadedFileMime = '';
+      if (uploadProgressFill) {
+        uploadProgressFill.style.width = '0';
+        uploadProgressFill.style.backgroundColor = '';
+      }
+      uploadStatusPercent?.classList.remove('done');
       uploadProgressCard?.classList.add('hidden');
       uploadDropzone?.classList.remove('hidden');
       fileUploaderInput.value = '';
@@ -359,11 +457,8 @@ try {
       if (uploadedFileId) {
         try {
           const res = await fetch(`/api/files/${uploadedFileId}`, { method: 'DELETE' });
-          if (res.ok) {
-            resetUploadZone();
-          } else {
-            alert('Failed to remove uploaded file');
-          }
+          if (res.ok) resetUploadZone();
+          else alert('Failed to remove uploaded file');
         } catch (err) {
           console.error(err);
         }
@@ -372,67 +467,53 @@ try {
       }
     });
 
-    // Save Material submission
-    const saveMaterialBtn = document.getElementById('save-material-btn');
+    // --- Save / Submit ---
+    const saveMaterialBtn = document.getElementById('save-material-btn') as HTMLButtonElement;
+
     saveMaterialBtn?.addEventListener('click', async (e) => {
       e.preventDefault();
 
       const title = materialTitle.value.trim();
       const description = (document.getElementById('material-description') as HTMLTextAreaElement).value;
       const collectionId = (document.getElementById('material-collection') as HTMLSelectElement).value || null;
-      const category = (document.getElementById('material-category') as HTMLInputElement).value.trim();
-      const semester = (document.getElementById('material-semester') as HTMLInputElement).value.trim();
+      const category = getFinalCategory();
+      const semester = (document.getElementById('material-semester-select') as HTMLSelectElement).value || 'All';
       const topic = (document.getElementById('material-topic') as HTMLInputElement).value.trim();
       const tagsString = (document.getElementById('material-tags') as HTMLInputElement).value;
       const isFavorite = (document.getElementById('material-favorite') as HTMLInputElement).checked;
       const isPinned = (document.getElementById('material-pinned') as HTMLInputElement).checked;
 
-      if (!title) {
-        alert('Resource Title is required.');
-        return;
-      }
+      if (!title) { alert('Resource Title is required.'); return; }
 
       if (resourceType === 'file' && !uploadedFileId) {
-        alert('Please drop or select a file to upload first.');
+        alert('Please upload a file first.');
         return;
       }
 
       let shareUrl = '';
       if (resourceType === 'link') {
         shareUrl = (document.getElementById('material-url') as HTMLInputElement).value.trim();
-        if (!shareUrl) {
-          alert('Please enter the URL link.');
-          return;
-        }
+        if (!shareUrl) { alert('Please enter the URL link.'); return; }
       }
 
-      // Convert tags
-      const tags = tagsString
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0);
+      const tags = tagsString.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
 
-      // Construct markdown note body representing the content.
-      // If it is a file upload: we represent it in note content as standard text description
-      // If it is a URL link: we embed the naked URL in the note body, which the link synchronizer automatically extracts!
       let noteBody = description || '';
-      if (resourceType === 'link') {
-        noteBody = `${shareUrl}\n\n${noteBody}`;
-      }
+      if (resourceType === 'link') noteBody = `${shareUrl}\n\n${noteBody}`;
 
       try {
         saveMaterialBtn.setAttribute('disabled', 'true');
-        saveMaterialBtn.textContent = 'Saving Resource...';
+        saveMaterialBtn.textContent = 'Saving...';
 
         const res = await fetch('/api/notes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: generatedNoteId, // Bind the same ID used in file uploading!
+            id: generatedNoteId,
             title,
             content: noteBody,
             collection_id: collectionId,
-            category: category || 'General',
+            category: category || 'general',
             semester: semester || 'All',
             topic: topic || 'General',
             is_favorite: isFavorite,
@@ -448,13 +529,13 @@ try {
         } else {
           alert(data.error || 'Failed to share material');
           saveMaterialBtn.removeAttribute('disabled');
-          saveMaterialBtn.textContent = 'Share Resource';
+          saveMaterialBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Share Resource</span>';
         }
       } catch (err) {
         console.error(err);
         alert('An error occurred during submission.');
         saveMaterialBtn.removeAttribute('disabled');
-        saveMaterialBtn.textContent = 'Share Resource';
+        saveMaterialBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Share Resource</span>';
       }
     });
   </script>
