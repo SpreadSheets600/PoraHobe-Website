@@ -1,8 +1,8 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { env } from 'cloudflare:workers';
 
 // Check if invite-only mode is active
-const env = Astro.locals.runtime?.env || {};
 const inviteOnly = env.INVITE_ONLY === 'true';
 
 // Cloudflare Turnstile Site Key (falls back to the standard Cloudflare test key for local development)

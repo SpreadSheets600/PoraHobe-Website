@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
 import { hashPassword, signJWT } from '../../../utils/crypto';
 import { logActivity } from '../../../utils/db';
+import { env } from 'cloudflare:workers';
 
 export const POST: APIRoute = async ({ request, locals, cookies }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     if (!db) {
       return new Response(JSON.stringify({ error: 'Database binding missing' }), {
         status: 500,
@@ -31,7 +32,6 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
     }
 
     // Invite only check
-    const env = locals.runtime?.env || {};
     const inviteOnly = env.INVITE_ONLY === 'true';
     const serverInviteCode = env.INVITE_CODE || 'PORAHOBE2026';
 

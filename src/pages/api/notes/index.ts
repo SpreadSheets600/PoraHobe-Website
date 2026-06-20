@@ -1,6 +1,7 @@
 import type { APIRoute } from 'astro';
 import { logActivity } from '../../../utils/db';
 import { syncNoteLinks } from '../../../utils/links';
+import { env } from 'cloudflare:workers';
 
 // Helper to sync note tags
 async function syncNoteTags(
@@ -45,7 +46,7 @@ async function syncNoteTags(
 // Fetch all notes (with filtering)
 export const GET: APIRoute = async ({ locals, url }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (!db || !user) {
@@ -134,7 +135,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
 // Create a new note
 export const POST: APIRoute = async ({ request, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (!db || !user) {

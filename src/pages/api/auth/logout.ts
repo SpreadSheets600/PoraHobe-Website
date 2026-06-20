@@ -1,9 +1,10 @@
 import type { APIRoute } from 'astro';
 import { logActivity } from '../../../utils/db';
+import { env } from 'cloudflare:workers';
 
 export const POST: APIRoute = async ({ locals, cookies }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (db && user) {

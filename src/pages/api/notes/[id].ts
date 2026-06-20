@@ -1,6 +1,8 @@
 import type { APIRoute } from 'astro';
 import { logActivity } from '../../../utils/db';
 import { syncNoteLinks, syncBacklinks } from '../../../utils/links';
+import { env } from 'cloudflare:workers';
+import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 // Helper to sync note tags
 async function syncNoteTags(
@@ -40,7 +42,7 @@ async function syncNoteTags(
 // GET specific note details (including backlinks, tags, attachments, links, and recommendations)
 export const GET: APIRoute = async ({ params, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
     const { id } = params;
 
@@ -134,7 +136,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
 // PUT update note
 export const PUT: APIRoute = async ({ params, request, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
     const { id } = params;
 
@@ -225,8 +227,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 // DELETE note
 export const DELETE: APIRoute = async ({ params, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
-    const r2 = locals.runtime?.env?.R2;
+    const db = env.DB;
     const user = locals.user;
     const { id } = params;
 
@@ -248,19 +249,40 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
       return new Response(JSON.stringify({ error: 'Note not found' }), { status: 404 });
     }
 
-    // Find and delete R2 attachments if any
+    // Find and delete S3/B2 attachments if any
     const attachments = (await db
       .prepare('SELECT r2_key FROM attachments WHERE note_id = ?')
       .bind(id)
       .all()
     ).results;
 
-    if (r2 && attachments && attachments.length > 0) {
+    if (attachments && attachments.length > 0) {
+      const runtimeEnv = locals.runtime?.env || {};
+      const s3Endpoint = runtimeEnv.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
+      const s3SecretKey = runtimeEnv.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
+      const s3AccessKeyId = runtimeEnv.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
+      const s3BucketName = runtimeEnv.S3_BUCKET_NAME || 'CityPulse';
+      const s3Region = runtimeEnv.S3_REGION_NAME || 'eu-central-003';
+
+      const s3 = new S3Client({
+        endpoint: s3Endpoint,
+        region: s3Region,
+        credentials: {
+          accessKeyId: s3AccessKeyId,
+          secretAccessKey: s3SecretKey,
+        },
+        forcePathStyle: true,
+      });
+
       for (const att of attachments) {
         try {
-          await r2.delete(att.r2_key as string);
+          const command = new DeleteObjectCommand({
+            Bucket: s3BucketName,
+            Key: att.r2_key as string,
+          });
+          await s3.send(command);
         } catch (e) {
-          console.error('Failed to delete file from R2:', att.r2_key, e);
+          console.error('Failed to delete file from S3:', att.r2_key, e);
         }
       }
     }

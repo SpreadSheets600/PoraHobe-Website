@@ -1,9 +1,10 @@
 import type { APIRoute } from 'astro';
 import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { env } from 'cloudflare:workers';
 
 export const GET: APIRoute = async ({ params, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
     const { id } = params;
 
@@ -15,7 +16,6 @@ export const GET: APIRoute = async ({ params, locals }) => {
       return new Response('File ID is required', { status: 400 });
     }
 
-    const env = locals.runtime?.env || {};
     const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
     const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
     const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
@@ -96,7 +96,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
 // DELETE file
 export const DELETE: APIRoute = async ({ params, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
     const { id } = params;
 
@@ -108,7 +108,6 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
       return new Response(JSON.stringify({ error: 'File ID is required' }), { status: 400 });
     }
 
-    const env = locals.runtime?.env || {};
     const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
     const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
     const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';

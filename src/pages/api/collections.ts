@@ -1,11 +1,12 @@
 import type { APIRoute } from 'astro';
 import { logActivity, buildCollectionTree } from '../../utils/db';
 import type { Collection } from '../../utils/db';
+import { env } from 'cloudflare:workers';
 
 // Get collections (either tree format or list format)
 export const GET: APIRoute = async ({ locals, url }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (!db || !user) {
@@ -40,7 +41,7 @@ export const GET: APIRoute = async ({ locals, url }) => {
 // Create a collection
 export const POST: APIRoute = async ({ request, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (!db || !user) {
@@ -91,7 +92,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
 // Update/Rename/Move collection
 export const PUT: APIRoute = async ({ request, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (!db || !user) {
@@ -164,7 +165,7 @@ export const PUT: APIRoute = async ({ request, locals }) => {
 // Delete collection
 export const DELETE: APIRoute = async ({ request, locals }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     const user = locals.user;
 
     if (!db || !user) {

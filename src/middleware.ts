@@ -1,5 +1,6 @@
 import { defineMiddleware } from 'astro:middleware';
 import { verifyJWT } from './utils/crypto';
+import { env } from 'cloudflare:workers';
 
 // Public paths that do not require authentication
 const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/register'];
@@ -8,8 +9,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const url = new URL(context.request.url);
   const path = url.pathname;
 
-  // Initialize runtime env variables with fallbacks if they are missing
-  const env = context.locals.runtime?.env || {};
   const jwtSecret = env.JWT_SECRET || 'porahobe-super-secret-jwt-key-change-in-prod';
   
   // Parse session cookie

@@ -2,10 +2,11 @@ import type { APIRoute } from 'astro';
 import { verifyPassword, signJWT } from '../../../utils/crypto';
 import { logActivity } from '../../../utils/db';
 import type { User } from '../../../utils/db';
+import { env } from 'cloudflare:workers';
 
 export const POST: APIRoute = async ({ request, locals, cookies }) => {
   try {
-    const db = locals.runtime?.env?.DB;
+    const db = env.DB;
     if (!db) {
       return new Response(JSON.stringify({ error: 'Database binding missing' }), {
         status: 500,
@@ -46,7 +47,6 @@ export const POST: APIRoute = async ({ request, locals, cookies }) => {
     }
 
     // Create session token
-    const env = locals.runtime?.env || {};
     const jwtSecret = env.JWT_SECRET || 'porahobe-super-secret-jwt-key-change-in-prod';
     const sessionToken = await signJWT(
       { id: user.id, username: user.username, role: user.role },
