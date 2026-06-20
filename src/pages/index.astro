@@ -1,945 +1,1131 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import type { Note, LinkItem, ActivityLog } from '../utils/db';
-import { env } from 'cloudflare:workers';
+import Layout from "../layouts/Layout.astro";
+import type { Note, LinkItem, ActivityLog } from "../utils/db";
+import { env } from "cloudflare:workers";
 
 const user = Astro.locals.user;
 const db = env.DB;
 
 if (!user || !db) {
-  return Astro.redirect('/login');
+    return Astro.redirect("/login");
 }
 
 // 1. Fetch Stats
 const stats = {
-  totalNotes: 0,
-  pinnedNotes: 0,
-  favoriteNotes: 0,
-  storageUsedBytes: 0,
+    totalNotes: 0,
+    pinnedNotes: 0,
+    favoriteNotes: 0,
+    storageUsedBytes: 0,
 };
 
 try {
-  const notesCount: any = await db
-    .prepare('SELECT COUNT(id) as count FROM notes WHERE user_id = ?')
-    .bind(user.id)
-    .first();
-  stats.totalNotes = notesCount?.count || 0;
+    const notesCount: any = await db
+        .prepare("SELECT COUNT(id) as count FROM notes WHERE user_id = ?")
+        .bind(user.id)
+        .first();
+    stats.totalNotes = notesCount?.count || 0;
 
-  const pinnedCount: any = await db
-    .prepare('SELECT COUNT(id) as count FROM notes WHERE user_id = ? AND is_pinned = 1')
-    .bind(user.id)
-    .first();
-  stats.pinnedNotes = pinnedCount?.count || 0;
+    const pinnedCount: any = await db
+        .prepare(
+            "SELECT COUNT(id) as count FROM notes WHERE user_id = ? AND is_pinned = 1",
+        )
+        .bind(user.id)
+        .first();
+    stats.pinnedNotes = pinnedCount?.count || 0;
 
-  const favoriteCount: any = await db
-    .prepare('SELECT COUNT(id) as count FROM notes WHERE user_id = ? AND is_favorite = 1')
-    .bind(user.id)
-    .first();
-  stats.favoriteNotes = favoriteCount?.count || 0;
+    const favoriteCount: any = await db
+        .prepare(
+            "SELECT COUNT(id) as count FROM notes WHERE user_id = ? AND is_favorite = 1",
+        )
+        .bind(user.id)
+        .first();
+    stats.favoriteNotes = favoriteCount?.count || 0;
 
-  const sizeSum: any = await db
-    .prepare(
-      'SELECT SUM(file_size) as total_size FROM attachments a JOIN notes n ON a.note_id = n.id WHERE n.user_id = ?'
-    )
-    .bind(user.id)
-    .first();
-  stats.storageUsedBytes = sizeSum?.total_size || 0;
+    const sizeSum: any = await db
+        .prepare(
+            "SELECT SUM(file_size) as total_size FROM attachments a JOIN notes n ON a.note_id = n.id WHERE n.user_id = ?",
+        )
+        .bind(user.id)
+        .first();
+    stats.storageUsedBytes = sizeSum?.total_size || 0;
 } catch (e) {
-  console.error('Failed to load stats:', e);
+    console.error("Failed to load stats:", e);
 }
 
 // Format storage size helper
 const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
 };
 
 // 2. Fetch Recent Notes
 let recentNotes: any[] = [];
 try {
-  const { results } = await db
-    .prepare(
-      `SELECT n.*, 
+    const { results } = await db
+        .prepare(
+            `SELECT n.*,
        (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
        (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
        (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
        (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
-       FROM notes n WHERE n.user_id = ? ORDER BY n.updated_at DESC LIMIT 4`
-    )
-    .bind(user.id)
-    .all();
-  recentNotes = results;
+       FROM notes n WHERE n.user_id = ? ORDER BY n.updated_at DESC LIMIT 4`,
+        )
+        .bind(user.id)
+        .all();
+    recentNotes = results;
 } catch (e) {
-  console.error('Failed to load recent notes:', e);
+    console.error("Failed to load recent notes:", e);
 }
 
 // 3. Fetch Pinned Notes
 let pinnedNotes: any[] = [];
 try {
-  const { results } = await db
-    .prepare(
-      `SELECT n.*, 
+    const { results } = await db
+        .prepare(
+            `SELECT n.*,
        (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
        (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
        (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
        (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
-       FROM notes n WHERE n.user_id = ? AND n.is_pinned = 1 ORDER BY n.updated_at DESC LIMIT 4`
-    )
-    .bind(user.id)
-    .all();
-  pinnedNotes = results;
+       FROM notes n WHERE n.user_id = ? AND n.is_pinned = 1 ORDER BY n.updated_at DESC LIMIT 4`,
+        )
+        .bind(user.id)
+        .all();
+    pinnedNotes = results;
 } catch (e) {
-  console.error('Failed to load pinned notes:', e);
+    console.error("Failed to load pinned notes:", e);
 }
 
 // 4. Fetch Favorite Notes
 let favoriteNotes: any[] = [];
 try {
-  const { results } = await db
-    .prepare(
-      `SELECT n.*, 
+    const { results } = await db
+        .prepare(
+            `SELECT n.*,
        (SELECT COUNT(*) FROM attachments a WHERE a.note_id = n.id) as attachment_count,
        (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
        (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
        (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
-       FROM notes n WHERE n.user_id = ? AND n.is_favorite = 1 ORDER BY n.updated_at DESC LIMIT 4`
-    )
-    .bind(user.id)
-    .all();
-  favoriteNotes = results;
+       FROM notes n WHERE n.user_id = ? AND n.is_favorite = 1 ORDER BY n.updated_at DESC LIMIT 4`,
+        )
+        .bind(user.id)
+        .all();
+    favoriteNotes = results;
 } catch (e) {
-  console.error('Failed to load favorite notes:', e);
+    console.error("Failed to load favorite notes:", e);
 }
 
 // 5. Fetch YouTube Videos with Watch Progress
 let watchProgressVideos: (LinkItem & { note_title: string })[] = [];
 try {
-  const { results } = await db
-    .prepare(
-      `SELECT l.*, n.title as note_title 
-       FROM links l 
-       JOIN notes n ON l.note_id = n.id 
-       WHERE n.user_id = ? AND l.type = 'youtube' AND l.watch_progress > 0 
-       ORDER BY l.created_at DESC LIMIT 4`
-    )
-    .bind(user.id)
-    .all<LinkItem & { note_title: string }>();
-  watchProgressVideos = results;
+    const { results } = await db
+        .prepare(
+            `SELECT l.*, n.title as note_title
+       FROM links l
+       JOIN notes n ON l.note_id = n.id
+       WHERE n.user_id = ? AND l.type = 'youtube' AND l.watch_progress > 0
+       ORDER BY l.created_at DESC LIMIT 4`,
+        )
+        .bind(user.id)
+        .all<LinkItem & { note_title: string }>();
+    watchProgressVideos = results;
 } catch (e) {
-  console.error('Failed to load videos:', e);
+    console.error("Failed to load videos:", e);
 }
 
 // 6. Fetch Recent Activity Logs
 let activityLogs: ActivityLog[] = [];
 try {
-  const { results } = await db
-    .prepare('SELECT * FROM activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 5')
-    .bind(user.id)
-    .all<ActivityLog>();
-  activityLogs = results;
+    const { results } = await db
+        .prepare(
+            "SELECT * FROM activity_logs WHERE user_id = ? ORDER BY created_at DESC LIMIT 5",
+        )
+        .bind(user.id)
+        .all<ActivityLog>();
+    activityLogs = results;
 } catch (e) {
-  console.error('Failed to load activity logs:', e);
+    console.error("Failed to load activity logs:", e);
 }
 
 // 7. Fetch Top Tags
 let topTags: { name: string; count: number }[] = [];
 try {
-  const { results } = await db
-    .prepare(
-      `SELECT t.name, COUNT(nt.note_id) as count 
-       FROM tags t 
-       JOIN note_tags nt ON t.id = nt.tag_id 
-       JOIN notes n ON nt.note_id = n.id 
-       WHERE n.user_id = ? 
-       GROUP BY t.name 
-       ORDER BY count DESC LIMIT 8`
-    )
-    .bind(user.id)
-    .all<{ name: string; count: number }>();
-  topTags = results;
+    const { results } = await db
+        .prepare(
+            `SELECT t.name, COUNT(nt.note_id) as count
+       FROM tags t
+       JOIN note_tags nt ON t.id = nt.tag_id
+       JOIN notes n ON nt.note_id = n.id
+       WHERE n.user_id = ?
+       GROUP BY t.name
+       ORDER BY count DESC LIMIT 8`,
+        )
+        .bind(user.id)
+        .all<{ name: string; count: number }>();
+    topTags = results;
 } catch (e) {
-  console.error('Failed to load tags:', e);
+    console.error("Failed to load tags:", e);
 }
 
 // Helper to get Lucide SVG string for material type
 const getIconHtml = (note: any, size = 16) => {
-  if (note.attachment_count > 0) {
-    if (note.first_attachment_mime === 'application/pdf') {
-      return `<svg class="lucide lucide-file-text" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+    if (note.attachment_count > 0) {
+        if (note.first_attachment_mime === "application/pdf") {
+            return `<svg class="lucide lucide-file-text" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+        }
+        return `<svg class="lucide lucide-image" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
     }
-    return `<svg class="lucide lucide-image" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>`;
-  }
-  if (note.link_count > 0) {
-    if (note.first_link_type === 'youtube') {
-      return `<svg class="lucide lucide-video" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>`;
+    if (note.link_count > 0) {
+        if (note.first_link_type === "youtube") {
+            return `<svg class="lucide lucide-video" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>`;
+        }
+        if (note.first_link_type === "drive") {
+            return `<svg class="lucide lucide-folder" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+        }
+        return `<svg class="lucide lucide-link" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
     }
-    if (note.first_link_type === 'drive') {
-      return `<svg class="lucide lucide-folder" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
-    }
-    return `<svg class="lucide lucide-link" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`;
-  }
-  return `<svg class="lucide lucide-file" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>`;
+    return `<svg class="lucide lucide-file" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>`;
 };
 
 // Helper to get Activity Log Lucide SVG
 const getActivityIconHtml = (action: string) => {
-  if (action.includes('note')) {
-    return `<svg class="lucide lucide-file-text" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
-  }
-  if (action.includes('collection')) {
-    return `<svg class="lucide lucide-folder" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
-  }
-  if (action.includes('file') || action.includes('upload')) {
-    return `<svg class="lucide lucide-paperclip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
-  }
-  if (action.includes('login') || action.includes('auth')) {
-    return `<svg class="lucide lucide-key" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3M17 6l3 3"/></svg>`;
-  }
-  return `<svg class="lucide lucide-zap" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`;
+    if (action.includes("note")) {
+        return `<svg class="lucide lucide-file-text" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>`;
+    }
+    if (action.includes("collection")) {
+        return `<svg class="lucide lucide-folder" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
+    }
+    if (action.includes("file") || action.includes("upload")) {
+        return `<svg class="lucide lucide-paperclip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>`;
+    }
+    if (action.includes("login") || action.includes("auth")) {
+        return `<svg class="lucide lucide-key" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3M17 6l3 3"/></svg>`;
+    }
+    return `<svg class="lucide lucide-zap" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`;
 };
 ---
 
 <Layout title="Dashboard - PoraHobe">
-  <div class="dashboard-wrapper animate-fade-in">
-    <!-- Welcome banner -->
-    <div class="welcome-banner bento-card">
-      <div class="welcome-text">
-        <h2>Welcome back, {user.username}! <svg class="lucide lucide-sparkles" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; color: var(--warning);"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"/><path d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5Z"/><path d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1Z"/></svg></h2>
-        <p>Your workspace is synced and ready. Here is a summary of your shared study materials and indexed resources.</p>
-      </div>
-      <div class="quick-actions">
-        <a href="/notes/new" class="quick-action-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M5 12h14M12 5v14"></path>
-          </svg>
-          <span>Share Material</span>
-        </a>
-        <button class="quick-action-btn" id="dash-create-folder-btn">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>
-          </svg>
-          <span>New Folder</span>
-        </button>
-      </div>
-    </div>
-
-    <div class="bento-grid">
-      <!-- Stats Widget -->
-      <div class="bento-card col-span-4 stat-card">
-        <h3>Storage & Stats</h3>
-        <div class="stats-list">
-          <div class="stat-item">
-            <span class="stat-label">Total Materials</span>
-            <span class="stat-value">{stats.totalNotes}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Pinned Items</span>
-            <span class="stat-value">{stats.pinnedNotes}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">Bookmarks</span>
-            <span class="stat-value">{stats.favoriteNotes}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">S3 Storage</span>
-            <span class="stat-value">{formatBytes(stats.storageUsedBytes)}</span>
-          </div>
+    <div class="dashboard-wrapper animate-fade-in">
+        <!-- Welcome banner -->
+        <div class="welcome-banner bento-card">
+            <div class="welcome-text">
+                <h2>
+                    Welcome back, {user.username}! <svg
+                        class="lucide lucide-sparkles"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.5"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        style="display: inline-block; vertical-align: middle; color: var(--warning);"
+                        ><path
+                            d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275Z"
+                        ></path><path
+                            d="m5 3 1 2.5L8.5 6 6 7 5 9.5 4 7 1.5 6 4 5Z"
+                        ></path><path
+                            d="m19 17 1 2.5 2.5.5-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1Z"
+                        ></path></svg
+                    >
+                </h2>
+                <p>
+                    Your workspace is synced and ready. Here is a summary of
+                    your shared study materials and indexed resources.
+                </p>
+            </div>
+            <div class="quick-actions">
+                <a href="/notes/new" class="quick-action-btn">
+                    <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path d="M5 12h14M12 5v14"></path>
+                    </svg>
+                    <span>Share Material</span>
+                </a>
+                <button class="quick-action-btn" id="dash-create-folder-btn">
+                    <svg
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    >
+                        <path
+                            d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+                        ></path>
+                    </svg>
+                    <span>New Folder</span>
+                </button>
+            </div>
         </div>
-      </div>
 
-      <!-- Pinned Notes -->
-      <div class="bento-card col-span-8">
-        <div class="card-header">
-          <h3>Pinned Resources</h3>
-          <a href="/notes?is_pinned=1" class="view-all-link">View all</a>
-        </div>
-        {pinnedNotes.length === 0 ? (
-          <div class="empty-state">No pinned resources yet. Pin items inside their page to keep them handy here.</div>
-        ) : (
-          <div class="notes-grid">
-            {pinnedNotes.map((note) => (
-              <a href={`/notes/${note.id}`} class="note-mini-card">
-                <span class="pin-icon" set:html={getIconHtml(note, 18)}></span>
-                <div class="note-mini-card-details">
-                  <span class="note-title">{note.title}</span>
-                  <span class="note-meta">{note.category || 'General'} • {note.semester || 'All'}</span>
+        <div class="bento-grid">
+            <!-- Stats Widget -->
+            <div class="bento-card col-span-4 stat-card">
+                <h3>Storage & Stats</h3>
+                <div class="stats-list">
+                    <div class="stat-item">
+                        <span class="stat-label">Total Materials</span>
+                        <span class="stat-value">{stats.totalNotes}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Pinned Items</span>
+                        <span class="stat-value">{stats.pinnedNotes}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Bookmarks</span>
+                        <span class="stat-value">{stats.favoriteNotes}</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">S3 Storage</span>
+                        <span class="stat-value"
+                            >{formatBytes(stats.storageUsedBytes)}</span
+                        >
+                    </div>
                 </div>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      <!-- Recent Notes -->
-      <div class="bento-card col-span-6">
-        <div class="card-header">
-          <h3>Recent Materials</h3>
-          <a href="/notes" class="view-all-link">View all</a>
-        </div>
-        {recentNotes.length === 0 ? (
-          <div class="empty-state">No study materials shared yet. Share your first resource to get started!</div>
-        ) : (
-          <ul class="item-list">
-            {recentNotes.map((note) => (
-              <li>
-                <a href={`/notes/${note.id}`} class="list-item-link">
-                  <div class="item-title-wrapper">
-                    <span class="item-icon-box" set:html={getIconHtml(note, 15)}></span>
-                    <span class="item-title">{note.title}</span>
-                  </div>
-                  <span class="item-time">{new Date(note.updated_at).toLocaleDateString()}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <!-- Favorite Materials -->
-      <div class="bento-card col-span-6">
-        <div class="card-header">
-          <h3>Bookmarked Resources</h3>
-          <a href="/notes?is_favorite=1" class="view-all-link">View all</a>
-        </div>
-        {favoriteNotes.length === 0 ? (
-          <div class="empty-state">No bookmarks marked. Star resources inside their details view to see them here.</div>
-        ) : (
-          <ul class="item-list">
-            {favoriteNotes.map((note) => (
-              <li>
-                <a href={`/notes/${note.id}`} class="list-item-link">
-                  <div class="item-title-wrapper">
-                    <span class="item-icon-box" set:html={getIconHtml(note, 15)}></span>
-                    <span class="item-title">{note.title}</span>
-                  </div>
-                  <span class="item-tag">{note.category || 'General'}</span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      <!-- Recently Watched Videos -->
-      <div class="bento-card col-span-6">
-        <div class="card-header">
-          <h3>Recently Watched Videos</h3>
-          <a href="/notes/history" class="view-all-link">View all</a>
-        </div>
-        {watchProgressVideos.length === 0 ? (
-          <div class="empty-state">No video watch progress found. Embed YouTube videos inside notes.</div>
-        ) : (
-          <div class="video-progress-grid">
-            {watchProgressVideos.map((video) => {
-              // Extract video ID from thumbnail
-              const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
-              // Format progress
-              const mins = Math.floor(video.watch_progress / 60);
-              const secs = video.watch_progress % 60;
-              const formattedProgress = `${mins}m ${secs}s`;
-
-              return (
-                <a href={`/notes/${video.note_id}`} class="video-mini-card">
-                  <div class="video-thumb">
-                    {video.thumbnail_url ? (
-                      <img src={video.thumbnail_url} alt={video.title || 'Video'} loading="lazy" />
+            <!-- Pinned Notes -->
+            <div class="bento-card col-span-8">
+                <div class="card-header">
+                    <h3>Pinned Resources</h3>
+                    <a href="/notes?is_pinned=1" class="view-all-link"
+                        >View all</a
+                    >
+                </div>
+                {
+                    pinnedNotes.length === 0 ? (
+                        <div class="empty-state">
+                            No pinned resources yet. Pin items inside their page
+                            to keep them handy here.
+                        </div>
                     ) : (
-                      <div class="thumb-fallback">
-                        <svg class="lucide" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                          <polygon points="6 3 20 12 6 21 6 3"></polygon>
-                        </svg>
-                      </div>
-                    )}
-                    <span class="progress-badge">{formattedProgress}</span>
-                  </div>
-                  <div class="video-info">
-                    <span class="video-title">{video.title || 'YouTube Video'}</span>
-                    <span class="video-note">In: {video.note_title}</span>
-                  </div>
-                </a>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                        <div class="notes-grid">
+                            {pinnedNotes.map((note) => (
+                                <a
+                                    href={`/notes/${note.id}`}
+                                    class="note-mini-card"
+                                >
+                                    <span
+                                        class="pin-icon"
+                                        set:html={getIconHtml(note, 18)}
+                                    />
+                                    <div class="note-mini-card-details">
+                                        <span class="note-title">
+                                            {note.title}
+                                        </span>
+                                        <span class="note-meta">
+                                            {note.category || "General"} •{" "}
+                                            {note.semester || "All"}
+                                        </span>
+                                    </div>
+                                </a>
+                            ))}
+                        </div>
+                    )
+                }
+            </div>
 
-      <!-- Activity Timeline -->
-      <div class="bento-card col-span-6">
-        <h3>Activity Timeline</h3>
-        {activityLogs.length === 0 ? (
-          <div class="empty-state">No logs recorded. Activity shows up as you interact.</div>
-        ) : (
-          <div class="timeline">
-            {activityLogs.map((log) => {
-              // Time diff
-              const diffMs = Date.now() - log.created_at;
-              const diffMins = Math.floor(diffMs / 60000);
-              let timeStr = 'just now';
-              if (diffMins > 0 && diffMins < 60) {
-                timeStr = `${diffMins}m ago`;
-              } else if (diffMins >= 60 && diffMins < 1440) {
-                timeStr = `${Math.floor(diffMins / 60)}h ago`;
-              } else if (diffMins >= 1440) {
-                timeStr = `${Math.floor(diffMins / 1440)}d ago`;
-              }
-
-              return (
-                <div class="timeline-item">
-                  <span class="timeline-icon" set:html={getActivityIconHtml(log.action)}></span>
-                  <div class="timeline-content">
-                    <p class="timeline-text">{log.details}</p>
-                    <span class="timeline-time">{timeStr}</span>
-                  </div>
+            <!-- Recent Notes -->
+            <div class="bento-card col-span-6">
+                <div class="card-header">
+                    <h3>Recent Materials</h3>
+                    <a href="/notes" class="view-all-link">View all</a>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                {
+                    recentNotes.length === 0 ? (
+                        <div class="empty-state">
+                            No study materials shared yet. Share your first
+                            resource to get started!
+                        </div>
+                    ) : (
+                        <ul class="item-list">
+                            {recentNotes.map((note) => (
+                                <li>
+                                    <a
+                                        href={`/notes/${note.id}`}
+                                        class="list-item-link"
+                                    >
+                                        <div class="item-title-wrapper">
+                                            <span
+                                                class="item-icon-box"
+                                                set:html={getIconHtml(note, 15)}
+                                            />
+                                            <span class="item-title">
+                                                {note.title}
+                                            </span>
+                                        </div>
+                                        <span class="item-time">
+                                            {new Date(
+                                                note.updated_at,
+                                            ).toLocaleDateString()}
+                                        </span>
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    )
+                }
+            </div>
 
-      <!-- Trending/Used Tags -->
-      <div class="bento-card col-span-12">
-        <h3>Workspace Tags</h3>
-        {topTags.length === 0 ? (
-          <div class="empty-state">No tags created. Add tags when editing notes to categorize.</div>
-        ) : (
-          <div class="tags-cloud">
-            {topTags.map((tag) => (
-              <a href={`/notes?tag=${encodeURIComponent(tag.name)}`} class="tag-badge">
-                <span class="tag-hash">#</span>
-                <span class="tag-name">{tag.name}</span>
-                <span class="tag-count">{tag.count}</span>
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
+            <!-- Favorite Materials -->
+            <div class="bento-card col-span-6">
+                <div class="card-header">
+                    <h3>Bookmarked Resources</h3>
+                    <a href="/notes?is_favorite=1" class="view-all-link"
+                        >View all</a
+                    >
+                </div>
+                {
+                    favoriteNotes.length === 0 ? (
+                        <div class="empty-state">
+                            No bookmarks marked. Star resources inside their
+                            details view to see them here.
+                        </div>
+                    ) : (
+                        <ul class="item-list">
+                            {favoriteNotes.map((note) => (
+                                <li>
+                                    <a
+                                        href={`/notes/${note.id}`}
+                                        class="list-item-link"
+                                    >
+                                        <div class="item-title-wrapper">
+                                            <span
+                                                class="item-icon-box"
+                                                set:html={getIconHtml(note, 15)}
+                                            />
+                                            <span class="item-title">
+                                                {note.title}
+                                            </span>
+                                        </div>
+                                        <span class="item-tag">
+                                            {note.category || "General"}
+                                        </span>
+                                    </a>
+                                </li>
+                            ))}
+                        </ul>
+                    )
+                }
+            </div>
+
+            <!-- Recently Watched Videos -->
+            <div class="bento-card col-span-6">
+                <div class="card-header">
+                    <h3>Recently Watched Videos</h3>
+                    <a href="/notes/history" class="view-all-link">View all</a>
+                </div>
+                {
+                    watchProgressVideos.length === 0 ? (
+                        <div class="empty-state">
+                            No video watch progress found. Embed YouTube videos
+                            inside notes.
+                        </div>
+                    ) : (
+                        <div class="video-progress-grid">
+                            {watchProgressVideos.map((video) => {
+                                // Extract video ID from thumbnail
+                                const videoId =
+                                    video.thumbnail_url
+                                        ?.split("/vi/")[1]
+                                        ?.split("/")[0] || "";
+                                // Format progress
+                                const mins = Math.floor(
+                                    video.watch_progress / 60,
+                                );
+                                const secs = video.watch_progress % 60;
+                                const formattedProgress = `${mins}m ${secs}s`;
+
+                                return (
+                                    <a
+                                        href={`/notes/${video.note_id}`}
+                                        class="video-mini-card"
+                                    >
+                                        <div class="video-thumb">
+                                            {video.thumbnail_url ? (
+                                                <img
+                                                    src={video.thumbnail_url}
+                                                    alt={video.title || "Video"}
+                                                    loading="lazy"
+                                                />
+                                            ) : (
+                                                <div class="thumb-fallback">
+                                                    <svg
+                                                        class="lucide"
+                                                        width="24"
+                                                        height="24"
+                                                        viewBox="0 0 24 24"
+                                                        fill="none"
+                                                        stroke="currentColor"
+                                                        stroke-width="2"
+                                                        stroke-linecap="round"
+                                                        stroke-linejoin="round"
+                                                    >
+                                                        <polygon points="6 3 20 12 6 21 6 3" />
+                                                    </svg>
+                                                </div>
+                                            )}
+                                            <span class="progress-badge">
+                                                {formattedProgress}
+                                            </span>
+                                        </div>
+                                        <div class="video-info">
+                                            <span class="video-title">
+                                                {video.title || "YouTube Video"}
+                                            </span>
+                                            <span class="video-note">
+                                                In: {video.note_title}
+                                            </span>
+                                        </div>
+                                    </a>
+                                );
+                            })}
+                        </div>
+                    )
+                }
+            </div>
+
+            <!-- Activity Timeline -->
+            <div class="bento-card col-span-6">
+                <h3>Activity Timeline</h3>
+                {
+                    activityLogs.length === 0 ? (
+                        <div class="empty-state">
+                            No logs recorded. Activity shows up as you interact.
+                        </div>
+                    ) : (
+                        <div class="timeline">
+                            {activityLogs.map((log) => {
+                                // Time diff
+                                const diffMs = Date.now() - log.created_at;
+                                const diffMins = Math.floor(diffMs / 60000);
+                                let timeStr = "just now";
+                                if (diffMins > 0 && diffMins < 60) {
+                                    timeStr = `${diffMins}m ago`;
+                                } else if (diffMins >= 60 && diffMins < 1440) {
+                                    timeStr = `${Math.floor(diffMins / 60)}h ago`;
+                                } else if (diffMins >= 1440) {
+                                    timeStr = `${Math.floor(diffMins / 1440)}d ago`;
+                                }
+
+                                return (
+                                    <div class="timeline-item">
+                                        <span
+                                            class="timeline-icon"
+                                            set:html={getActivityIconHtml(
+                                                log.action,
+                                            )}
+                                        />
+                                        <div class="timeline-content">
+                                            <p class="timeline-text">
+                                                {log.details}
+                                            </p>
+                                            <span class="timeline-time">
+                                                {timeStr}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )
+                }
+            </div>
+
+            <!-- Trending/Used Tags -->
+            <div class="bento-card col-span-12">
+                <h3>Workspace Tags</h3>
+                {
+                    topTags.length === 0 ? (
+                        <div class="empty-state">
+                            No tags created. Add tags when editing notes to
+                            categorize.
+                        </div>
+                    ) : (
+                        <div class="tags-cloud">
+                            {topTags.map((tag) => (
+                                <a
+                                    href={`/notes?tag=${encodeURIComponent(tag.name)}`}
+                                    class="tag-badge"
+                                >
+                                    <span class="tag-hash">#</span>
+                                    <span class="tag-name">{tag.name}</span>
+                                    <span class="tag-count">{tag.count}</span>
+                                </a>
+                            ))}
+                        </div>
+                    )
+                }
+            </div>
+        </div>
     </div>
-  </div>
 
-  <style>
-    .dashboard-wrapper {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .welcome-banner {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
-      color: white;
-      padding: 32px 40px;
-      border-radius: var(--border-radius-lg);
-      box-shadow: 0 8px 32px rgba(139, 92, 246, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .welcome-text h2 {
-      font-size: 1.8rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      margin-bottom: 6px;
-      color: white;
-      text-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-
-    .welcome-text p {
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 1rem;
-    }
-
-    .quick-actions {
-      display: flex;
-      gap: 12px;
-    }
-
-    .quick-action-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 20px;
-      background: rgba(255, 255, 255, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      border-radius: var(--border-radius-md);
-      font-size: 0.9rem;
-      font-weight: 600;
-      cursor: pointer;
-      color: white;
-      transition: background var(--transition-fast), border var(--transition-fast), transform var(--transition-fast);
-    }
-
-    .quick-action-btn:hover {
-      background: white;
-      color: var(--accent-primary);
-      border-color: white;
-      transform: translateY(-2px);
-    }
-
-    /* Bento Column Spanning classes */
-    .col-span-4 { grid-column: span 4; }
-    .col-span-6 { grid-column: span 6; }
-    .col-span-8 { grid-column: span 8; }
-    .col-span-12 { grid-column: span 12; }
-
-    @media (max-width: 1024px) {
-      .col-span-4 { grid-column: span 6; }
-      .col-span-8 { grid-column: span 6; }
-      .col-span-6 { grid-column: span 6; }
-      .col-span-12 { grid-column: span 6; }
-    }
-
-    /* Stats widget */
-    .stat-card {
-      background: radial-gradient(circle at top left, var(--accent-glow) 0%, var(--card-bg) 100%);
-    }
-
-    .stats-list {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-top: 16px;
-    }
-
-    .stat-item {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      background: var(--bg-primary);
-      padding: 16px;
-      border-radius: var(--border-radius-md);
-      border: 1px solid var(--card-border);
-      transition: all var(--transition-fast);
-    }
-
-    .stat-item:hover {
-      border-color: var(--accent-primary);
-      box-shadow: var(--shadow-sm);
-      transform: translateY(-1px);
-    }
-
-    .stat-label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .stat-value {
-      font-size: 1.75rem;
-      font-weight: 700;
-      color: var(--text-primary);
-      margin-top: 4px;
-    }
-
-    /* Card Header */
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-
-    .view-all-link {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--accent-primary);
-      transition: opacity var(--transition-fast);
-    }
-
-    .view-all-link:hover {
-      opacity: 0.8;
-    }
-
-    /* Pinned grid */
-    .notes-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-    }
-
-    @media (max-width: 640px) {
-      .notes-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .note-mini-card {
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      transition: all var(--transition-fast);
-      text-decoration: none;
-    }
-
-    .note-mini-card:hover {
-      background: var(--bg-tertiary);
-      border-color: var(--accent-primary);
-      box-shadow: var(--shadow-md);
-      transform: translateY(-2px);
-    }
-
-    .pin-icon {
-      font-size: 1.4rem;
-      width: 42px;
-      height: 42px;
-      background: var(--bg-primary);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-      box-shadow: var(--shadow-sm);
-    }
-
-    .note-mini-card-details {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-      flex: 1;
-    }
-
-    .note-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .note-meta {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      margin-top: 2px;
-    }
-
-    /* Item List styling */
-    .item-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .list-item-link {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 16px;
-      border-radius: var(--border-radius-md);
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      transition: all var(--transition-fast);
-    }
-
-    .list-item-link:hover {
-      background: var(--bg-tertiary);
-      border-color: var(--accent-primary);
-      box-shadow: var(--shadow-sm);
-      transform: translateX(2px);
-    }
-
-    .item-title-wrapper {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      min-width: 0;
-    }
-
-    .item-icon-box {
-      font-size: 1.1rem;
-      width: 28px;
-      height: 28px;
-      background: var(--bg-primary);
-      border: 1px solid var(--card-border);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .item-title {
-      font-size: 0.95rem;
-      font-weight: 500;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 240px;
-    }
-
-    .item-time, .item-tag {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .item-tag {
-      background: var(--accent-glow);
-      color: var(--accent-primary);
-      padding: 2px 8px;
-      border-radius: var(--border-radius-full);
-      border: 1px solid hsla(262, 83%, 58%, 0.1);
-    }
-
-    /* Video progress widget */
-    .video-progress-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-      margin-top: 12px;
-    }
-
-    @media (max-width: 640px) {
-      .video-progress-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .video-mini-card {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 12px;
-      transition: all var(--transition-fast);
-    }
-
-    .video-mini-card:hover {
-      border-color: var(--accent-primary);
-      box-shadow: var(--shadow-md);
-      transform: translateY(-2px);
-    }
-
-    .video-thumb {
-      position: relative;
-      aspect-ratio: 16/9;
-      border-radius: var(--border-radius-sm);
-      overflow: hidden;
-      background: black;
-    }
-
-    .video-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transition: transform var(--transition-normal);
-    }
-
-    .video-mini-card:hover .video-thumb img {
-      transform: scale(1.05);
-    }
-
-    .progress-badge {
-      position: absolute;
-      bottom: 8px;
-      right: 8px;
-      background: rgba(0, 0, 0, 0.85);
-      backdrop-filter: blur(4px);
-      color: white;
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 4px;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-
-    .video-info {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      min-width: 0;
-    }
-
-    .video-title {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .video-note {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* Timeline widget */
-    .timeline {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      margin-top: 12px;
-      position: relative;
-      padding-left: 20px;
-    }
-
-    .timeline::before {
-      content: "";
-      position: absolute;
-      top: 4px;
-      left: 6px;
-      bottom: 4px;
-      width: 2px;
-      background: var(--card-border);
-    }
-
-    .timeline-item {
-      display: flex;
-      gap: 14px;
-      position: relative;
-    }
-
-    .timeline-icon {
-      font-size: 0.95rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 26px;
-      height: 26px;
-      background: var(--bg-primary);
-      border: 1px solid var(--card-border);
-      border-radius: 50%;
-      flex-shrink: 0;
-      z-index: 1;
-      position: absolute;
-      left: -26px;
-      top: 0;
-    }
-
-    .timeline-content {
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
-      min-width: 0;
-      flex: 1;
-    }
-
-    .timeline-text {
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-      line-height: 1.4;
-    }
-
-    .timeline-time {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    /* Tags Cloud */
-    .tags-cloud {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .tag-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      padding: 6px 12px;
-      border-radius: var(--border-radius-full);
-      font-size: 0.85rem;
-      transition: all var(--transition-fast);
-      cursor: pointer;
-    }
-
-    .tag-badge:hover {
-      background: var(--accent-glow);
-      border-color: var(--accent-primary);
-      transform: translateY(-1px);
-    }
-
-    .tag-hash {
-      color: var(--text-muted);
-      font-weight: 600;
-    }
-
-    .tag-name {
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .tag-badge:hover .tag-name {
-      color: var(--accent-primary);
-    }
-
-    .tag-count {
-      background: var(--bg-tertiary);
-      color: var(--text-muted);
-      font-size: 0.7rem;
-      padding: 2px 6px;
-      border-radius: var(--border-radius-full);
-      font-weight: 600;
-      transition: all var(--transition-fast);
-    }
-
-    .tag-badge:hover .tag-count {
-      background: var(--accent-primary);
-      color: white;
-    }
-
-    .empty-state {
-      padding: 32px;
-      text-align: center;
-      color: var(--text-muted);
-      font-size: 0.9rem;
-      font-style: italic;
-      background: var(--bg-secondary);
-      border: 1px dashed var(--card-border);
-      border-radius: var(--border-radius-md);
-      width: 100%;
-    }
-  </style>
-
-  <script>
-    // Create folder trigger from dashboard
-    const dashFolderBtn = document.getElementById('dash-create-folder-btn');
-    if (dashFolderBtn) {
-      dashFolderBtn.addEventListener('click', async () => {
-        const name = prompt('Enter new folder name:');
-        if (name && name.trim()) {
-          try {
-            const res = await fetch('/api/collections', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: name.trim() }),
-            });
-            if (res.ok) {
-              window.location.reload();
-            } else {
-              const data = await res.json();
-              alert(data.error || 'Failed to create folder');
-            }
-          } catch (err) {
-            console.error(err);
-          }
+    <style>
+        .dashboard-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
         }
-      });
-    }
-  </script>
+
+        .welcome-banner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(
+                135deg,
+                var(--accent-primary) 0%,
+                var(--accent-secondary) 100%
+            );
+            color: white;
+            padding: 32px 40px;
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 8px 32px rgba(139, 92, 246, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .welcome-text h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            margin-bottom: 6px;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .welcome-text p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 1rem;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .quick-action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            border-radius: var(--border-radius-md);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            transition:
+                background var(--transition-fast),
+                border var(--transition-fast),
+                transform var(--transition-fast);
+        }
+
+        .quick-action-btn:hover {
+            background: white;
+            color: var(--accent-primary);
+            border-color: white;
+            transform: translateY(-2px);
+        }
+
+        /* Bento Column Spanning classes */
+        .col-span-4 {
+            grid-column: span 4;
+        }
+        .col-span-6 {
+            grid-column: span 6;
+        }
+        .col-span-8 {
+            grid-column: span 8;
+        }
+        .col-span-12 {
+            grid-column: span 12;
+        }
+
+        @media (max-width: 1024px) {
+            .col-span-4 {
+                grid-column: span 6;
+            }
+            .col-span-8 {
+                grid-column: span 6;
+            }
+            .col-span-6 {
+                grid-column: span 6;
+            }
+            .col-span-12 {
+                grid-column: span 6;
+            }
+        }
+
+        /* Stats widget */
+        .stat-card {
+            background: radial-gradient(
+                circle at top left,
+                var(--accent-glow) 0%,
+                var(--card-bg) 100%
+            );
+        }
+
+        .stats-list {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: var(--bg-primary);
+            padding: 16px;
+            border-radius: var(--border-radius-md);
+            border: 1px solid var(--card-border);
+            transition: all var(--transition-fast);
+        }
+
+        .stat-item:hover {
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-top: 4px;
+        }
+
+        /* Card Header */
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .view-all-link {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent-primary);
+            transition: opacity var(--transition-fast);
+        }
+
+        .view-all-link:hover {
+            opacity: 0.8;
+        }
+
+        /* Pinned grid */
+        .notes-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+
+        @media (max-width: 640px) {
+            .notes-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .note-mini-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--card-border);
+            border-radius: var(--border-radius-md);
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: all var(--transition-fast);
+            text-decoration: none;
+        }
+
+        .note-mini-card:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .pin-icon {
+            font-size: 1.4rem;
+            width: 42px;
+            height: 42px;
+            background: var(--bg-primary);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .note-mini-card-details {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .note-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .note-meta {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* Item List styling */
+        .item-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .list-item-link {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: var(--border-radius-md);
+            background: var(--bg-secondary);
+            border: 1px solid var(--card-border);
+            transition: all var(--transition-fast);
+        }
+
+        .list-item-link:hover {
+            background: var(--bg-tertiary);
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-sm);
+            transform: translateX(2px);
+        }
+
+        .item-title-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 0;
+        }
+
+        .item-icon-box {
+            font-size: 1.1rem;
+            width: 28px;
+            height: 28px;
+            background: var(--bg-primary);
+            border: 1px solid var(--card-border);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .item-title {
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 240px;
+        }
+
+        .item-time,
+        .item-tag {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .item-tag {
+            background: var(--accent-glow);
+            color: var(--accent-primary);
+            padding: 2px 8px;
+            border-radius: var(--border-radius-full);
+            border: 1px solid hsla(262, 83%, 58%, 0.1);
+        }
+
+        /* Video progress widget */
+        .video-progress-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        @media (max-width: 640px) {
+            .video-progress-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .video-mini-card {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--card-border);
+            border-radius: var(--border-radius-md);
+            padding: 12px;
+            transition: all var(--transition-fast);
+        }
+
+        .video-mini-card:hover {
+            border-color: var(--accent-primary);
+            box-shadow: var(--shadow-md);
+            transform: translateY(-2px);
+        }
+
+        .video-thumb {
+            position: relative;
+            aspect-ratio: 16/9;
+            border-radius: var(--border-radius-sm);
+            overflow: hidden;
+            background: black;
+        }
+
+        .video-thumb img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform var(--transition-normal);
+        }
+
+        .video-mini-card:hover .video-thumb img {
+            transform: scale(1.05);
+        }
+
+        .progress-badge {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(4px);
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .video-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .video-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .video-note {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Timeline widget */
+        .timeline {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 12px;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .timeline::before {
+            content: "";
+            position: absolute;
+            top: 4px;
+            left: 6px;
+            bottom: 4px;
+            width: 2px;
+            background: var(--card-border);
+        }
+
+        .timeline-item {
+            display: flex;
+            gap: 14px;
+            position: relative;
+        }
+
+        .timeline-icon {
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            background: var(--bg-primary);
+            border: 1px solid var(--card-border);
+            border-radius: 50%;
+            flex-shrink: 0;
+            z-index: 1;
+            position: absolute;
+            left: -26px;
+            top: 0;
+        }
+
+        .timeline-content {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .timeline-text {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            line-height: 1.4;
+            padding-left: 2px;
+        }
+
+        .timeline-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Tags Cloud */
+        .tags-cloud {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .tag-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--card-border);
+            padding: 6px 12px;
+            border-radius: var(--border-radius-full);
+            font-size: 0.85rem;
+            transition: all var(--transition-fast);
+            cursor: pointer;
+        }
+
+        .tag-badge:hover {
+            background: var(--accent-glow);
+            border-color: var(--accent-primary);
+            transform: translateY(-1px);
+        }
+
+        .tag-hash {
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .tag-name {
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .tag-badge:hover .tag-name {
+            color: var(--accent-primary);
+        }
+
+        .tag-count {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: var(--border-radius-full);
+            font-weight: 600;
+            transition: all var(--transition-fast);
+        }
+
+        .tag-badge:hover .tag-count {
+            background: var(--accent-primary);
+            color: white;
+        }
+
+        .empty-state {
+            padding: 32px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-style: italic;
+            background: var(--bg-secondary);
+            border: 1px dashed var(--card-border);
+            border-radius: var(--border-radius-md);
+            width: 100%;
+        }
+    </style>
+
+    <script>
+        // Create folder trigger from dashboard
+        const dashFolderBtn = document.getElementById("dash-create-folder-btn");
+        if (dashFolderBtn) {
+            dashFolderBtn.addEventListener("click", async () => {
+                const name = prompt("Enter new folder name:");
+                if (name && name.trim()) {
+                    try {
+                        const res = await fetch("/api/collections", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ name: name.trim() }),
+                        });
+                        if (res.ok) {
+                            window.location.reload();
+                        } else {
+                            const data = await res.json();
+                            alert(data.error || "Failed to create folder");
+                        }
+                    } catch (err) {
+                        console.error(err);
+                    }
+                }
+            });
+        }
+    </script>
 </Layout>
