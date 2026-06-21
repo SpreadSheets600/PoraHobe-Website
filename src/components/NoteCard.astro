@@ -1,0 +1,67 @@
+---
+import BentoCard from './BentoCard.astro';
+import Badge from './Badge.astro';
+import Icon from './Icon.astro';
+import { formatCategoryName } from '../utils/categories';
+
+interface Props {
+  note: any;
+}
+
+const { note } = Astro.props;
+
+const getCleanSnippet = (content: string) => {
+  const clean = content
+    .replace(/[#*`_\[\]]/g, '')
+    .replace(/\$\$[\s\S]*?\$\$/g, '')
+    .replace(/\$[\s\S]*?\$/g, '')
+    .replace(/\\/g, '')
+    .trim();
+  return clean.slice(0, 120) + (clean.length > 120 ? '...' : '');
+};
+
+const getResourceBadge = () => {
+  if (note.attachment_count > 0) {
+    const isPdf = note.first_attachment_mime === 'application/pdf';
+    return { variant: isPdf ? 'pdf' as const : 'image' as const, label: isPdf ? 'PDF' : 'Image', icon: isPdf ? 'file-text' as const : 'image' as const };
+  }
+  if (note.link_count > 0) {
+    if (note.first_link_type === 'youtube') return { variant: 'youtube' as const, label: 'Video', icon: 'video' as const };
+    if (note.first_link_type === 'drive') return { variant: 'drive' as const, label: 'Drive', icon: 'folder' as const };
+    return { variant: 'link' as const, label: 'Link', icon: 'link' as const };
+  }
+  return { variant: 'default' as const, label: 'Note', icon: 'file' as const };
+};
+---
+
+<BentoCard interactive class="flex flex-col gap-4 h-[220px] justify-between col-span-4 max-lg:col-span-6 max-sm:col-span-12" padding>
+  <div class="flex justify-between items-center">
+    <div class="flex gap-1.5 flex-wrap">
+      {note.category && <Badge variant="accent">{formatCategoryName(note.category)}</Badge>}
+      {note.semester && <Badge>{note.semester}</Badge>}
+      <Badge variant={getResourceBadge().variant}>
+        <Icon name={getResourceBadge().icon} size={12} />
+        {getResourceBadge().label}
+      </Badge>
+    </div>
+    <div class="flex gap-1.5">
+      {note.is_pinned && <Icon name="pin" size={12} class="text-[var(--accent-primary)]" />}
+      {note.is_favorite && <Icon name="star" size={12} class="text-[var(--warning)]" />}
+    </div>
+  </div>
+
+  <a href={`/notes/${note.id}`} class="flex-1 flex flex-col gap-1.5 min-h-0">
+    <h3 class="text-lg font-semibold text-[var(--text-primary)] truncate">{note.title}</h3>
+    <p class="text-sm text-[var(--text-secondary)] overflow-hidden line-clamp-3 leading-relaxed">{getCleanSnippet(note.content)}</p>
+  </a>
+
+  <div class="flex justify-between items-center pt-3 border-t border-[var(--card-border)]">
+    <div class="flex gap-1 items-center">
+      {note.tags?.slice(0, 3).map((t: string) => (
+        <a href={`/notes?tag=${encodeURIComponent(t)}`} class="text-xs text-[var(--text-muted)] font-medium hover:text-[var(--accent-primary)]">#{t}</a>
+      ))}
+      {note.tags?.length > 3 && <span class="text-xs text-[var(--text-muted)] bg-[var(--bg-tertiary)] px-1 py-0.5 rounded font-semibold">+{note.tags.length - 3}</span>}
+    </div>
+    <span class="text-xs text-[var(--text-muted)]">{new Date(note.updated_at).toLocaleDateString()}</span>
+  </div>
+</BentoCard>

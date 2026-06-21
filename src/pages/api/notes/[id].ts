@@ -3,7 +3,7 @@ import { logActivity } from '../../../utils/db';
 import { syncNoteLinks, syncBacklinks } from '../../../utils/links';
 import { env } from 'cloudflare:workers';
 import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { FetchHttpHandler, streamCollector } from '@smithy/fetch-http-handler';
+import { FetchHttpHandler } from '@smithy/fetch-http-handler';
 
 // Helper to sync note tags
 async function syncNoteTags(
@@ -258,33 +258,30 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
     ).results;
 
     if (attachments && attachments.length > 0) {
-      const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
-      const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
-      const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
-      const s3BucketName = env.S3_BUCKET_NAME || 'CityPulse';
-      const s3Region = env.S3_REGION_NAME || 'eu-central-003';
+      const s3Endpoint = env.S3_ENDPOINT_URL;
+      const s3SecretKey = env.S3_SECRET_ACCESS_KEY;
+      const s3AccessKeyId = env.S3_ACCESS_KEY_ID;
+      const s3BucketName = env.S3_BUCKET_NAME;
+      const s3Region = env.S3_REGION_NAME;
 
-      const s3 = new S3Client({
-        requestHandler: new FetchHttpHandler(),
-        streamCollector,
-        endpoint: s3Endpoint,
-        region: s3Region,
-        credentials: {
-          accessKeyId: s3AccessKeyId,
-          secretAccessKey: s3SecretKey,
-        },
-        forcePathStyle: true,
-      });
+      if (!s3Endpoint || !s3SecretKey || !s3AccessKeyId || !s3BucketName) {
+        console.error('S3 credentials missing for attachment cleanup');
+      } else {
+        const s3 = new S3Client({
+          requestHandler: new FetchHttpHandler(),
+          endpoint: s3Endpoint,
+          region: s3Region,
+          credentials: { accessKeyId: s3AccessKeyId, secretAccessKey: s3SecretKey },
+          forcePathStyle: true,
+        });
 
-      for (const att of attachments) {
-        try {
-          const command = new DeleteObjectCommand({
-            Bucket: s3BucketName,
-            Key: att.r2_key as string,
-          });
-          await s3.send(command);
-        } catch (e) {
-          console.error('Failed to delete file from S3:', att.r2_key, e);
+        for (const att of attachments) {
+          try {
+            const command = new DeleteObjectCommand({ Bucket: s3BucketName, Key: att.r2_key as string });
+            await s3.send(command);
+          } catch (e) {
+            console.error('Failed to delete file from S3:', att.r2_key, e);
+          }
         }
       }
     }

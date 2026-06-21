@@ -3,16 +3,15 @@ import Layout from '../../layouts/Layout.astro';
 import type { Note } from '../../utils/db';
 import { env } from 'cloudflare:workers';
 import { formatCategoryName } from '../../utils/categories';
-
+import BentoCard from '../../components/BentoCard.astro';
+import NoteCard from '../../components/NoteCard.astro';
+import Icon from '../../components/Icon.astro';
 
 const user = Astro.locals.user;
 const db = env.DB;
 
-if (!user || !db) {
-  return Astro.redirect('/login');
-}
+if (!user || !db) return Astro.redirect('/login');
 
-// Extract search parameters
 const url = Astro.url;
 const search = url.searchParams.get('search') || '';
 const collectionId = url.searchParams.get('collection_id') || '';
@@ -23,26 +22,15 @@ const isFavorite = url.searchParams.get('is_favorite') === '1';
 const isPinned = url.searchParams.get('is_pinned') === '1';
 const sort = url.searchParams.get('sort') || 'updated_desc';
 
-// 1. Fetch Distinct Categories & Semesters for Filters
 let categories: string[] = [];
 let semesters: string[] = [];
 try {
-  const catRes = await db
-    .prepare('SELECT DISTINCT category FROM notes WHERE user_id = ? AND category IS NOT NULL AND category != ""')
-    .bind(user.id)
-    .all();
+  const catRes = await db.prepare('SELECT DISTINCT category FROM notes WHERE user_id = ? AND category IS NOT NULL AND category != ""').bind(user.id).all();
   categories = catRes.results.map((r: any) => r.category);
-
-  const semRes = await db
-    .prepare('SELECT DISTINCT semester FROM notes WHERE user_id = ? AND semester IS NOT NULL AND semester != ""')
-    .bind(user.id)
-    .all();
+  const semRes = await db.prepare('SELECT DISTINCT semester FROM notes WHERE user_id = ? AND semester IS NOT NULL AND semester != ""').bind(user.id).all();
   semesters = semRes.results.map((r: any) => r.semester);
-} catch (e) {
-  console.error('Failed to load filter items:', e);
-}
+} catch (e) { console.error('Failed to load filter items:', e); }
 
-// 2. Build Notes Query
 let query = `
   SELECT n.*, c.name as collection_name,
   (SELECT group_concat(t.name) FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = n.id) as tags,
@@ -50,507 +38,109 @@ let query = `
   (SELECT mime_type FROM attachments a WHERE a.note_id = n.id LIMIT 1) as first_attachment_mime,
   (SELECT COUNT(*) FROM links l WHERE l.note_id = n.id) as link_count,
   (SELECT type FROM links l WHERE l.note_id = n.id LIMIT 1) as first_link_type
-  FROM notes n
-  LEFT JOIN collections c ON n.collection_id = c.id
-  WHERE n.user_id = ?
+  FROM notes n LEFT JOIN collections c ON n.collection_id = c.id WHERE n.user_id = ?
 `;
 const params: any[] = [user.id];
 
 if (collectionId) {
-  if (collectionId === 'root') {
-    query += ' AND n.collection_id IS NULL';
-  } else {
-    query += ' AND n.collection_id = ?';
-    params.push(collectionId);
-  }
+  if (collectionId === 'root') query += ' AND n.collection_id IS NULL';
+  else { query += ' AND n.collection_id = ?'; params.push(collectionId); }
 }
+if (search) { query += ' AND (n.title LIKE ? OR n.content LIKE ?)'; params.push(`%${search}%`, `%${search}%`); }
+if (tag) { query += ` AND n.id IN (SELECT nt.note_id FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE t.name = ?)`; params.push(tag.toLowerCase()); }
+if (categoryFilter) { query += ' AND n.category = ?'; params.push(categoryFilter); }
+if (semesterFilter) { query += ' AND n.semester = ?'; params.push(semesterFilter); }
+if (isFavorite) query += ' AND n.is_favorite = 1';
+if (isPinned) query += ' AND n.is_pinned = 1';
 
-if (search) {
-  query += ' AND (n.title LIKE ? OR n.content LIKE ?)';
-  params.push(`%${search}%`, `%${search}%`);
-}
-
-if (tag) {
-  query += ` AND n.id IN (
-    SELECT nt.note_id FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE t.name = ?
-  )`;
-  params.push(tag.toLowerCase());
-}
-
-if (categoryFilter) {
-  query += ' AND n.category = ?';
-  params.push(categoryFilter);
-}
-
-if (semesterFilter) {
-  query += ' AND n.semester = ?';
-  params.push(semesterFilter);
-}
-
-if (isFavorite) {
-  query += ' AND n.is_favorite = 1';
-}
-
-if (isPinned) {
-  query += ' AND n.is_pinned = 1';
-}
-
-// Apply Sort
-if (sort === 'updated_desc') {
-  query += ' ORDER BY n.is_pinned DESC, n.updated_at DESC';
-} else if (sort === 'updated_asc') {
-  query += ' ORDER BY n.updated_at ASC';
-} else if (sort === 'title_asc') {
-  query += ' ORDER BY n.title ASC';
-} else if (sort === 'title_desc') {
-  query += ' ORDER BY n.title DESC';
-} else if (sort === 'created_desc') {
-  query += ' ORDER BY n.created_at DESC';
-}
+if (sort === 'updated_desc') query += ' ORDER BY n.is_pinned DESC, n.updated_at DESC';
+else if (sort === 'updated_asc') query += ' ORDER BY n.updated_at ASC';
+else if (sort === 'title_asc') query += ' ORDER BY n.title ASC';
+else if (sort === 'title_desc') query += ' ORDER BY n.title DESC';
+else if (sort === 'created_desc') query += ' ORDER BY n.created_at DESC';
 
 let notes: any[] = [];
 try {
   const { results } = await db.prepare(query).bind(...params).all();
   notes = results.map((r: any) => ({
-    ...r,
-    tags: r.tags ? r.tags.split(',') : [],
-    is_favorite: !!r.is_favorite,
-    is_pinned: !!r.is_pinned,
-    attachment_count: r.attachment_count || 0,
-    first_attachment_mime: r.first_attachment_mime || '',
-    link_count: r.link_count || 0,
-    first_link_type: r.first_link_type || '',
+    ...r, tags: r.tags ? r.tags.split(',') : [], is_favorite: !!r.is_favorite, is_pinned: !!r.is_pinned,
+    attachment_count: r.attachment_count || 0, first_attachment_mime: r.first_attachment_mime || '',
+    link_count: r.link_count || 0, first_link_type: r.first_link_type || '',
   }));
-} catch (e) {
-  console.error('Failed to load notes list:', e);
-}
+} catch (e) { console.error('Failed to load notes list:', e); }
 
-// Fetch current collection details if collectionId is set
 let currentCollectionName = '';
 if (collectionId && collectionId !== 'root') {
   try {
-    const col: any = await db
-      .prepare('SELECT name FROM collections WHERE id = ? AND user_id = ?')
-      .bind(collectionId, user.id)
-      .first();
+    const col: any = await db.prepare('SELECT name FROM collections WHERE id = ? AND user_id = ?').bind(collectionId, user.id).first();
     currentCollectionName = col?.name || '';
-  } catch (e) {
-    console.error('Failed to load collection details:', e);
-  }
+  } catch (e) { console.error('Failed to load collection details:', e); }
 }
-
-// Snippet builder helper (removes markdown to make it a clean snippet)
-const getCleanSnippet = (content: string) => {
-  const clean = content
-    .replace(/[#*`_\[\]]/g, '') // remove markdown structures
-    .replace(/\$\$[\s\S]*?\$\$/g, '') // remove display math
-    .replace(/\$[\s\S]*?\$/g, '') // remove inline math
-    .replace(/\\/g, '')
-    .trim();
-  return clean.slice(0, 120) + (clean.length > 120 ? '...' : '');
-};
 ---
 
 <Layout title="Notes Archive - PoraHobe">
-  <div class="archive-wrapper animate-fade-in">
-    <div class="archive-header">
-      <div class="header-title">
-        <h2>
+  <div class="max-w-[1200px] mx-auto flex flex-col gap-6 animate-[fadeIn_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]">
+    <div class="flex flex-col gap-4">
+      <div class="flex items-center gap-3">
+        <h2 class="text-[1.5rem] font-bold tracking-tight">
           {collectionId && currentCollectionName ? `Folder: ${currentCollectionName}` : 'All Study Material'}
           {tag && ` #${tag}`}
           {isFavorite && ' ★ Bookmarks'}
           {isPinned && ' 📌 Pinned'}
         </h2>
-        <p class="notes-count">{notes.length} resource{notes.length === 1 ? '' : 's'} found</p>
+        <p class="text-sm text-[var(--text-muted)]">{notes.length} resource{notes.length === 1 ? '' : 's'} found</p>
       </div>
 
-      <div class="header-filters bento-card">
-        <!-- Search filter -->
-        <div class="filter-group">
-          <label>Search text</label>
-          <input type="text" id="filter-search" value={search} placeholder="Filter titles & body..." />
-        </div>
-
-        <!-- Category Filter -->
-        <div class="filter-group">
-          <label>Category</label>
-          <select id="filter-category">
+      <BentoCard class="grid grid-cols-4 max-md:grid-cols-2 max-sm:grid-cols-1 gap-4 !px-6 !py-4" padding>
+        {[
+          { id: 'filter-search', type: 'text', value: search, placeholder: 'Filter titles & body...', label: 'Search text' },
+        ].map((f) => (
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">{f.label}</label>
+            <input type={f.type} id={f.id} value={f.value} placeholder={f.placeholder} class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] cursor-pointer transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)]" />
+          </div>
+        ))}
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Category</label>
+          <select id="filter-category" class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] cursor-pointer transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)]">
             <option value="">All Categories</option>
-            {categories.map((cat) => (
-              <option value={cat} selected={cat === categoryFilter}>{cat}</option>
-            ))}
+            {categories.map((cat) => (<option value={cat} selected={cat === categoryFilter}>{cat}</option>))}
           </select>
         </div>
-
-        <!-- Semester Filter -->
-        <div class="filter-group">
-          <label>Semester</label>
-          <select id="filter-semester">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Semester</label>
+          <select id="filter-semester" class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] cursor-pointer transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)]">
             <option value="">All Semesters</option>
-            {semesters.map((sem) => (
-              <option value={sem} selected={sem === semesterFilter}>{sem}</option>
-            ))}
+            {semesters.map((sem) => (<option value={sem} selected={sem === semesterFilter}>{sem}</option>))}
           </select>
         </div>
-
-        <!-- Sorting -->
-        <div class="filter-group">
-          <label>Sort By</label>
-          <select id="filter-sort">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Sort By</label>
+          <select id="filter-sort" class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] cursor-pointer transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)]">
             <option value="updated_desc" selected={sort === 'updated_desc'}>Recently Updated</option>
             <option value="created_desc" selected={sort === 'created_desc'}>Recently Created</option>
             <option value="title_asc" selected={sort === 'title_asc'}>Title A-Z</option>
             <option value="title_desc" selected={sort === 'title_desc'}>Title Z-A</option>
           </select>
         </div>
-      </div>
+      </BentoCard>
     </div>
 
-    <!-- Notes grid -->
     {notes.length === 0 ? (
-      <div class="empty-state bento-card">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-        </svg>
-        <h3>No materials match your filters</h3>
-        <p>Try clearing your search query or choosing another folder.</p>
-        <a href="/notes/new" class="btn btn-primary mt-12">Create New Note</a>
-      </div>
+      <BentoCard class="flex flex-col items-center gap-3 py-12 text-center">
+        <Icon name="file-text" size={48} class="text-[var(--text-muted)]" />
+        <h3 class="text-lg font-semibold">No materials match your filters</h3>
+        <p class="text-sm text-[var(--text-muted)]">Try clearing your search query or choosing another folder.</p>
+        <a href="/notes/new" class="inline-flex items-center justify-center gap-2 px-[18px] py-2.5 rounded-[var(--border-radius-md)] font-semibold text-sm cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)] hover:-translate-y-px mt-3">Create New Note</a>
+      </BentoCard>
     ) : (
-      <div class="bento-grid">
-        {notes.map((note) => (
-          <div class="bento-card col-span-4 note-card interactive">
-            <div class="note-card-header">
-              <div class="note-card-badges">
-                {note.category && <span class="badge badge-category">{formatCategoryName(note.category)}</span>}
-                {note.semester && <span class="badge badge-semester">{note.semester}</span>}
-                
-                {note.attachment_count > 0 ? (
-                  note.first_attachment_mime === 'application/pdf' ? (
-                    <span class="badge badge-resource pdf">
-                      <svg class="lucide lucide-file-text" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                      PDF
-                    </span>
-                  ) : (
-                    <span class="badge badge-resource image">
-                      <svg class="lucide lucide-image" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                      Image
-                    </span>
-                  )
-                ) : note.link_count > 0 ? (
-                  note.first_link_type === 'youtube' ? (
-                    <span class="badge badge-resource youtube">
-                      <svg class="lucide lucide-video" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
-                      Video
-                    </span>
-                  ) : note.first_link_type === 'drive' ? (
-                    <span class="badge badge-resource drive">
-                      <svg class="lucide lucide-folder" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-                      Drive
-                    </span>
-                  ) : (
-                    <span class="badge badge-resource link">
-                      <svg class="lucide lucide-link" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                      Link
-                    </span>
-                  )
-                ) : (
-                  <span class="badge badge-resource note">
-                    <svg class="lucide lucide-file" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px; display: inline-block; vertical-align: middle;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
-                    Note
-                  </span>
-                )}
-              </div>
-              <div class="note-card-actions">
-                {note.is_pinned && (
-                  <span class="badge-icon pin" title="Pinned">
-                    <svg class="lucide lucide-pin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle;"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-.44-1.24l-2.78-3.5A2 2 0 0 1 15 9.24V5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v4.24c0 .43-.14.85-.4 1.18L5.78 14c-.5.6-.78 1.37-.78 2.18Z"/></svg>
-                  </span>
-                )}
-                {note.is_favorite && (
-                  <span class="badge-icon favorite" title="Bookmarked">
-                    <svg class="lucide lucide-star" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--warning); display: inline-block; vertical-align: middle;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-                  </span>
-                )}
-              </div>
-            </div>
-            
-            <a href={`/notes/${note.id}`} class="note-card-body">
-              <h3 class="note-card-title">{note.title}</h3>
-              <p class="note-card-snippet">{getCleanSnippet(note.content)}</p>
-            </a>
-
-            <div class="note-card-footer">
-              <div class="note-card-tags">
-                {note.tags.slice(0, 3).map((t: string) => (
-                  <a href={`/notes?tag=${encodeURIComponent(t)}`} class="note-tag">#{t}</a>
-                ))}
-                {note.tags.length > 3 && <span class="note-tag-more">+{note.tags.length - 3}</span>}
-              </div>
-              <span class="note-card-date">{new Date(note.updated_at).toLocaleDateString()}</span>
-            </div>
-          </div>
-        ))}
+      <div class="grid grid-cols-12 gap-5 max-lg:flex max-lg:flex-col">
+        {notes.map((note) => <NoteCard note={note} />)}
       </div>
     )}
   </div>
 
-  <style>
-    .badge-resource {
-      background: var(--bg-tertiary);
-      color: var(--text-secondary);
-      border: 1px solid var(--card-border);
-    }
-    
-    .badge-resource.pdf {
-      background: rgba(239, 68, 68, 0.08);
-      color: #ef4444;
-      border-color: rgba(239, 68, 68, 0.2);
-    }
-    
-    .badge-resource.image {
-      background: rgba(16, 185, 129, 0.08);
-      color: #10b981;
-      border-color: rgba(16, 185, 129, 0.2);
-    }
-    
-    .badge-resource.youtube {
-      background: rgba(244, 63, 94, 0.08);
-      color: #f43f5e;
-      border-color: rgba(244, 63, 94, 0.2);
-    }
-    
-    .badge-resource.drive {
-      background: rgba(59, 130, 246, 0.08);
-      color: #3b82f6;
-      border-color: rgba(59, 130, 246, 0.2);
-    }
-    
-    .badge-resource.link {
-      background: rgba(245, 158, 11, 0.08);
-      color: #f59e0b;
-      border-color: rgba(245, 158, 11, 0.2);
-    }
-
-    .archive-wrapper {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    .archive-header {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .header-title h2 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-    }
-
-    .notes-count {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-
-    .header-filters {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      padding: 16px 24px;
-    }
-
-    @media (max-width: 768px) {
-      .header-filters {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-
-    @media (max-width: 480px) {
-      .header-filters {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .filter-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .filter-group label {
-      font-size: 0.75rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .filter-group input, .filter-group select {
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 8px 12px;
-      font-size: 0.9rem;
-      color: var(--text-primary);
-      width: 100%;
-      cursor: pointer;
-    }
-
-    .filter-group input:focus, .filter-group select:focus {
-      border-color: var(--accent-primary);
-    }
-
-    /* Column span override */
-    .col-span-4 {
-      grid-column: span 4;
-    }
-
-    @media (max-width: 1024px) {
-      .col-span-4 {
-        grid-column: span 6;
-      }
-    }
-
-    /* Note Card design */
-    .note-card {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      height: 220px;
-      justify-content: space-between;
-    }
-
-    .note-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .note-card-badges {
-      display: flex;
-      gap: 6px;
-    }
-
-    .badge {
-      font-size: 0.75rem;
-      font-weight: 500;
-      padding: 2px 8px;
-      border-radius: var(--border-radius-full);
-    }
-
-    .badge-category {
-      background: var(--accent-glow);
-      color: var(--accent-primary);
-      border: 1px solid hsla(262, 83%, 58%, 0.15);
-    }
-
-    .badge-semester {
-      background: var(--bg-tertiary);
-      color: var(--text-secondary);
-      border: 1px solid var(--card-border);
-    }
-
-    .note-card-actions {
-      display: flex;
-      gap: 6px;
-    }
-
-    .badge-icon {
-      font-size: 0.85rem;
-    }
-
-    .note-card-body {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      min-height: 0;
-    }
-
-    .note-card-title {
-      font-size: 1.1rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .note-card-snippet {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      overflow: hidden;
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      line-height: 1.5;
-    }
-
-    .note-card-footer {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding-top: 12px;
-      border-top: 1px solid var(--card-border);
-    }
-
-    .note-card-tags {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-    }
-
-    .note-tag {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .note-tag:hover {
-      color: var(--accent-primary);
-    }
-
-    .note-tag-more {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      background: var(--bg-tertiary);
-      padding: 1px 4px;
-      border-radius: 4px;
-      font-weight: 600;
-    }
-
-    .note-card-date {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    /* Empty state */
-    .empty-state {
-      padding: 48px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 12px;
-      text-align: center;
-    }
-
-    .empty-icon {
-      color: var(--text-muted);
-    }
-
-    .mt-12 {
-      margin-top: 12px;
-    }
-  </style>
-
   <script>
-    // Filtering logic
     const searchInput = document.getElementById('filter-search') as HTMLInputElement;
     const categorySelect = document.getElementById('filter-category') as HTMLSelectElement;
     const semesterSelect = document.getElementById('filter-semester') as HTMLSelectElement;
@@ -558,43 +148,20 @@ const getCleanSnippet = (content: string) => {
 
     const applyFilters = () => {
       const url = new URL(window.location.href);
-      
-      if (searchInput.value.trim()) {
-        url.searchParams.set('search', searchInput.value.trim());
-      } else {
-        url.searchParams.delete('search');
-      }
-
-      if (categorySelect.value) {
-        url.searchParams.set('category', categorySelect.value);
-      } else {
-        url.searchParams.delete('category');
-      }
-
-      if (semesterSelect.value) {
-        url.searchParams.set('semester', semesterSelect.value);
-      } else {
-        url.searchParams.delete('semester');
-      }
-
-      if (sortSelect.value) {
-        url.searchParams.set('sort', sortSelect.value);
-      } else {
-        url.searchParams.delete('sort');
-      }
-
+      if (searchInput.value.trim()) url.searchParams.set('search', searchInput.value.trim());
+      else url.searchParams.delete('search');
+      if (categorySelect.value) url.searchParams.set('category', categorySelect.value);
+      else url.searchParams.delete('category');
+      if (semesterSelect.value) url.searchParams.set('semester', semesterSelect.value);
+      else url.searchParams.delete('semester');
+      if (sortSelect.value) url.searchParams.set('sort', sortSelect.value);
+      else url.searchParams.delete('sort');
       window.location.href = url.pathname + url.search;
     };
 
-    // Apply filter on change or enter
     categorySelect?.addEventListener('change', applyFilters);
     semesterSelect?.addEventListener('change', applyFilters);
     sortSelect?.addEventListener('change', applyFilters);
-    
-    searchInput?.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        applyFilters();
-      }
-    });
+    searchInput?.addEventListener('keypress', (e) => { if (e.key === 'Enter') applyFilters(); });
   </script>
 </Layout>

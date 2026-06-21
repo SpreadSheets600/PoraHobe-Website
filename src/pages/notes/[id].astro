@@ -3,162 +3,75 @@ import Layout from '../../layouts/Layout.astro';
 import type { Collection } from '../../utils/db';
 import { env } from 'cloudflare:workers';
 import { formatCategoryName } from '../../utils/categories';
+import BentoCard from '../../components/BentoCard.astro';
+import Icon from '../../components/Icon.astro';
 
 const user = Astro.locals.user;
 const db = env.DB;
-
-if (!user || !db) {
-  return Astro.redirect('/login');
-}
+if (!user || !db) return Astro.redirect('/login');
 
 const { id } = Astro.params;
+if (!id) return Astro.redirect('/notes');
 
-if (!id) {
-  return Astro.redirect('/notes');
-}
-
-// 1. Fetch Note Details
 let note: any = null;
 try {
-  note = await db
-    .prepare(
-      `SELECT n.*, c.name as collection_name 
-       FROM notes n 
-       LEFT JOIN collections c ON n.collection_id = c.id 
-       WHERE n.id = ? AND n.user_id = ?`
-    )
-    .bind(id, user.id)
-    .first();
-} catch (e) {
-  console.error('Error fetching note details:', e);
-}
-
-if (!note) {
-  return Astro.redirect('/notes');
-}
-
+  note = await db.prepare(`SELECT n.*, c.name as collection_name FROM notes n LEFT JOIN collections c ON n.collection_id = c.id WHERE n.id = ? AND n.user_id = ?`).bind(id, user.id).first();
+} catch (e) { console.error('Error fetching note details:', e); }
+if (!note) return Astro.redirect('/notes');
 note.is_favorite = !!note.is_favorite;
 note.is_pinned = !!note.is_pinned;
 
-// 2. Fetch tags
 let tags: string[] = [];
-try {
-  const { results } = await db
-    .prepare('SELECT t.name FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = ?')
-    .bind(id)
-    .all();
-  tags = results.map((r: any) => r.name);
-} catch (e) {
-  console.error(e);
-}
-
-// 3. Fetch attachments
 let attachments: any[] = [];
-try {
-  const { results } = await db
-    .prepare('SELECT id, filename, file_size, mime_type, created_at FROM attachments WHERE note_id = ?')
-    .bind(id)
-    .all();
-  attachments = results;
-} catch (e) {
-  console.error(e);
-}
-
-// 4. Fetch links
 let links: any[] = [];
-try {
-  const { results } = await db
-    .prepare('SELECT id, url, type, title, thumbnail_url, watch_progress FROM links WHERE note_id = ?')
-    .bind(id)
-    .all();
-  links = results;
-} catch (e) {
-  console.error(e);
-}
-
-// 5. Fetch Backlinks
 let incomingBacklinks: any[] = [];
-try {
-  const { results } = await db
-    .prepare(
-      `SELECT n.id, n.title 
-       FROM backlinks b 
-       JOIN notes n ON b.source_note_id = n.id 
-       WHERE b.target_note_id = ? AND n.user_id = ?`
-    )
-    .bind(id, user.id)
-    .all();
-  incomingBacklinks = results;
-} catch (e) {
-  console.error(e);
-}
-
-// 6. Fetch Related notes
 let relatedNotes: any[] = [];
-try {
-  if (note.category) {
-    const { results } = await db
-      .prepare('SELECT id, title, category, semester FROM notes WHERE category = ? AND id != ? AND user_id = ? LIMIT 3')
-      .bind(note.category, id, user.id)
-      .all();
-    relatedNotes = results;
-  }
-} catch (e) {
-  console.error(e);
-}
-
-// 7. Fetch user collections for moving folder
 let collections: Collection[] = [];
-try {
-  const { results } = await db
-    .prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY name ASC')
-    .bind(user.id)
-    .all<Collection>();
-  collections = results;
-} catch (e) {
-  console.error(e);
-}
 
-// Format bytes helper
+try {
+  const { results: t } = await db.prepare('SELECT t.name FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = ?').bind(id).all();
+  tags = t.map((r: any) => r.name);
+  const { results: a } = await db.prepare('SELECT id, filename, file_size, mime_type, created_at FROM attachments WHERE note_id = ?').bind(id).all();
+  attachments = a;
+  const { results: l } = await db.prepare('SELECT id, url, type, title, thumbnail_url, watch_progress FROM links WHERE note_id = ?').bind(id).all();
+  links = l;
+  const { results: b } = await db.prepare(`SELECT n.id, n.title FROM backlinks b JOIN notes n ON b.source_note_id = n.id WHERE b.target_note_id = ? AND n.user_id = ?`).bind(id, user.id).all();
+  incomingBacklinks = b;
+  if (note.category) {
+    const { results: r } = await db.prepare('SELECT id, title, category, semester FROM notes WHERE category = ? AND id != ? AND user_id = ? LIMIT 3').bind(note.category, id, user.id).all();
+    relatedNotes = r;
+  }
+  const { results: c } = await db.prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY name ASC').bind(user.id).all<Collection>();
+  collections = c;
+} catch (e) { console.error(e); }
+
 const formatBytes = (bytes: number) => {
   if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 };
 
-// Helper to extract Google Drive embed preview URL
 function getDriveEmbedUrl(url: string): string | null {
   try {
     const driveUrl = new URL(url);
     if (driveUrl.hostname.includes('drive.google.com') || driveUrl.hostname.includes('docs.google.com')) {
       const fileMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
       if (fileMatch) return `https://drive.google.com/file/d/${fileMatch[1]}/preview`;
-
       const docMatch = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
       if (docMatch) return `https://docs.google.com/document/d/${docMatch[1]}/preview`;
-
       const presMatch = url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);
       if (presMatch) return `https://docs.google.com/presentation/d/${presMatch[1]}/preview`;
-
       const sheetMatch = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
       if (sheetMatch) return `https://docs.google.com/spreadsheets/d/${sheetMatch[1]}/preview`;
-
       const idParam = driveUrl.searchParams.get('id');
       if (idParam) return `https://drive.google.com/file/d/${idParam}/preview`;
     }
-  } catch (e) {}
+  } catch {}
   return null;
 }
 
-const drivePreviews = links
-  .filter((l) => l.type === 'drive')
-  .map((l) => ({
-    ...l,
-    embedUrl: getDriveEmbedUrl(l.url),
-  }));
-
+const drivePreviews = links.filter((l) => l.type === 'drive').map((l) => ({ ...l, embedUrl: getDriveEmbedUrl(l.url) }));
 const youtubeVideos = links.filter((l) => l.type === 'youtube');
 const pdfs = attachments.filter((a) => a.mime_type === 'application/pdf');
 const images = attachments.filter((a) => a.mime_type.startsWith('image/'));
@@ -166,1622 +79,521 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
 ---
 
 <Layout title={`${note.title} - PoraHobe`}>
-  <!-- Reading progress bar for Focus Mode -->
-  <div class="focus-progress-bar-container" id="focus-progress-container">
-    <div class="focus-progress-bar" id="focus-progress"></div>
+  <div id="focus-progress-container" class="fixed top-0 left-0 w-screen h-1 bg-[var(--bg-tertiary)] z-1000 hidden">
+    <div id="focus-progress" class="h-full w-0 bg-[var(--accent-primary)] transition-[width_var(--transition-fast)]"></div>
   </div>
 
-  <div class="note-view-wrapper animate-fade-in" id="note-view-wrapper" data-note-id={note.id}>
-    <!-- Action Toolbar -->
-    <div class="note-toolbar bento-card">
-      <div class="toolbar-left">
-        <a href="/notes" class="toolbar-btn" title="Back to Notes">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="19" x2="5" y1="12" y2="12"></line>
-            <polyline points="12 19 5 12 12 5"></polyline>
-          </svg>
-          <span class="desktop-only">Back</span>
+  <div id="note-view-wrapper" data-note-id={note.id} class="max-w-[1200px] mx-auto flex flex-col gap-5 animate-[fadeIn_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]">
+    <BentoCard class="flex justify-between items-center !py-3 !px-6" padding>
+      <div class="flex items-center gap-2">
+        <a href="/notes" class="inline-flex items-center gap-2 px-3.5 py-2 rounded-[var(--border-radius-md)] text-sm font-semibold cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] no-underline">
+          <Icon name="arrow-left" size={18} />
+          <span class="max-sm:hidden">Back</span>
         </a>
-        <div class="divider"></div>
-        <span class="folder-indicator">
-          <svg class="lucide lucide-folder" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle; color: var(--accent-primary);"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-          <select id="move-collection-select" title="Move folder">
+        <span class="w-px h-6 bg-[var(--card-border)] mx-1"></span>
+        <span class="flex items-center gap-1.5 bg-[var(--bg-secondary)] px-3 py-1.5 rounded-[var(--border-radius-md)] border border-[var(--card-border)] text-sm">
+          <Icon name="folder" size={16} class="text-[var(--accent-primary)]" />
+          <select id="move-collection-select" title="Move folder" class="text-sm font-semibold text-[var(--text-secondary)] cursor-pointer bg-transparent border-none outline-none">
             <option value="">Root / None</option>
-            {collections.map((col) => (
-              <option value={col.id} selected={col.id === note.collection_id}>{col.name}</option>
-            ))}
+            {collections.map((col) => (<option value={col.id} selected={col.id === note.collection_id}>{col.name}</option>))}
           </select>
         </span>
       </div>
-
-      <div class="toolbar-right">
-        <!-- Bookmark -->
-        <button class={`toolbar-btn ${note.is_favorite ? 'active' : ''}`} id="bookmark-toggle-btn" title="Bookmark">
-          <span class="star-icon">
-            <svg class="lucide lucide-star" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; vertical-align: middle;"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-          </span>
-          <span class="desktop-only">Favorite</span>
+      <div class="flex items-center gap-2">
+        <button class={`toolbar-btn inline-flex items-center gap-2 px-3.5 py-2 rounded-[var(--border-radius-md)] text-sm font-semibold cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] ${note.is_favorite ? 'bg-[var(--accent-glow)] border-[var(--accent-primary)] text-[var(--accent-primary)]' : ''}`} id="bookmark-toggle-btn" title="Bookmark">
+          <Icon name="star" size={16} class={note.is_favorite ? 'text-[var(--warning)]' : ''} />
+          <span class="max-sm:hidden">Favorite</span>
         </button>
-
-        <!-- Pin -->
-        <button class={`toolbar-btn ${note.is_pinned ? 'active' : ''}`} id="pin-toggle-btn" title="Pin note">
-          <span>📌</span>
-          <span class="desktop-only">Pin</span>
+        <button class={`toolbar-btn inline-flex items-center gap-2 px-3.5 py-2 rounded-[var(--border-radius-md)] text-sm font-semibold cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] ${note.is_pinned ? 'bg-[var(--accent-glow)] border-[var(--accent-primary)] text-[var(--accent-primary)]' : ''}`} id="pin-toggle-btn" title="Pin note">
+          <Icon name="pin" size={16} />
+          <span class="max-sm:hidden">Pin</span>
         </button>
-
-        <div class="divider"></div>
-
-        <!-- Focus Mode Toggle -->
-        <button class="toolbar-btn" id="focus-mode-btn" title="Distraction-free Focus Mode">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
-          </svg>
+        <span class="w-px h-6 bg-[var(--card-border)] mx-1"></span>
+        <button class="inline-flex items-center gap-2 px-3.5 py-2 rounded-[var(--border-radius-md)] text-sm font-semibold cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]" id="focus-mode-btn" title="Distraction-free Focus Mode">
+          <Icon name="maximize" size={18} />
           <span>Focus</span>
         </button>
-
-        <!-- Edit Toggle -->
-        <button class="toolbar-btn" id="edit-mode-btn" title="Edit Note">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
-          </svg>
+        <button class="inline-flex items-center gap-2 px-3.5 py-2 rounded-[var(--border-radius-md)] text-sm font-semibold cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]" id="edit-mode-btn" title="Edit Note">
+          <Icon name="edit" size={18} />
           <span>Edit</span>
         </button>
-
-        <button class="toolbar-btn danger" id="delete-note-btn" title="Delete Note">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-          </svg>
+        <button class="inline-flex items-center justify-center px-3.5 py-2 rounded-[var(--border-radius-md)] text-sm font-semibold cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] text-[var(--text-secondary)] hover:bg-[hsla(347,77%,50%,0.1)] hover:border-[var(--danger)] hover:text-[var(--danger)]" id="delete-note-btn" title="Delete Note">
+          <Icon name="trash" size={18} />
         </button>
       </div>
-    </div>
+    </BentoCard>
 
-    <!-- Main Content Area -->
-    <div class="note-main-layout" id="note-main-layout">
-      <!-- READ PANEL -->
-      <div class="read-pane bento-card" id="read-pane">
-        <div class="note-meta-header">
-          <h1 class="note-title-text" id="note-view-title">{note.title}</h1>
-          <div class="note-metadata-tags">
-            {note.category && <span class="badge badge-category">{formatCategoryName(note.category)}</span>}
-            {note.semester && <span class="badge badge-semester">{note.semester}</span>}
-            {note.topic && <span class="badge badge-topic">Topic: {note.topic}</span>}
+    <div id="note-main-layout" class="grid grid-cols-[8fr_4fr] gap-5 items-start max-lg:grid-cols-1">
+      <BentoCard class="flex flex-col gap-6 !p-8" padding>
+        <div class="border-b border-[var(--card-border)] pb-4">
+          <h1 id="note-view-title" class="text-[2rem] font-bold tracking-tight mb-3">{note.title}</h1>
+          <div class="flex gap-2">
+            {note.category && <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-[var(--border-radius-full)] border w-fit bg-[var(--accent-glow)] text-[var(--accent-primary)] border-[hsla(262,83%,58%,0.15)]">{formatCategoryName(note.category)}</span>}
+            {note.semester && <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-[var(--border-radius-full)] border w-fit bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--card-border)]">{note.semester}</span>}
+            {note.topic && <span class="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-[var(--border-radius-full)] border w-fit bg-[var(--bg-secondary)] text-[var(--text-muted)] border-[var(--card-border)]">Topic: {note.topic}</span>}
           </div>
         </div>
 
         {hasPreviews && (
-          <div class="preview-hub">
-            <div class="preview-hub-tabs">
+          <div class="flex flex-col overflow-hidden border border-[var(--card-border)] bg-[var(--card-bg)] rounded-[var(--border-radius-lg)] mb-6">
+            <div class="flex flex-wrap bg-[var(--bg-secondary)] border-b border-[var(--card-border)] px-3 py-1.5 gap-[6.5px]">
               {pdfs.map((pdf) => (
-                <button class="preview-tab-btn" data-tab-type="pdf" data-target-id={`pdf-preview-${pdf.id}`}>
-                  <svg class="lucide lucide-file-text" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle;"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                  {pdf.filename.length > 20 ? pdf.filename.slice(0, 17) + '...' : pdf.filename}
+                <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="pdf" data-target-id={`pdf-preview-${pdf.id}`}>
+                  <Icon name="file-text" size={14} />{pdf.filename.length > 20 ? pdf.filename.slice(0, 17) + '...' : pdf.filename}
                 </button>
               ))}
               {images.map((img) => (
-                <button class="preview-tab-btn" data-tab-type="image" data-target-id={`image-preview-${img.id}`}>
-                  <svg class="lucide lucide-image" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle;"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                  {img.filename.length > 20 ? img.filename.slice(0, 17) + '...' : img.filename}
+                <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="image" data-target-id={`image-preview-${img.id}`}>
+                  <Icon name="image" size={14} />{img.filename.length > 20 ? img.filename.slice(0, 17) + '...' : img.filename}
                 </button>
               ))}
               {youtubeVideos.map((video) => (
-                <button class="preview-tab-btn" data-tab-type="youtube" data-target-id={`yt-preview-${video.id}`}>
-                  <svg class="lucide lucide-video" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle;"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
-                  Video Preview
+                <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="youtube" data-target-id={`yt-preview-${video.id}`}>
+                  <Icon name="video" size={14} />Video Preview
                 </button>
               ))}
               {drivePreviews.filter(d => d.embedUrl).map((drive) => (
-                <button class="preview-tab-btn" data-tab-type="drive" data-target-id={`drive-preview-${drive.id}`}>
-                  <svg class="lucide lucide-folder" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle;"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-                  Drive Preview
+                <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="drive" data-target-id={`drive-preview-${drive.id}`}>
+                  <Icon name="folder" size={14} />Drive Preview
                 </button>
               ))}
             </div>
 
-            <div class="preview-hub-panes">
+            <div class="preview-panes">
               {pdfs.map((pdf) => (
-                <div class="preview-pane-content hidden" id={`pdf-preview-${pdf.id}`}>
-                  <div class="preview-header-bar">
-                    <span class="file-name">
-                      <svg class="lucide lucide-file-text" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle; color: var(--accent-primary);"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-                      {pdf.filename} ({formatBytes(pdf.file_size)})
+                <div class="preview-pane-content hidden flex flex-col w-full" id={`pdf-preview-${pdf.id}`}>
+                  <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
+                    <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]">
+                      <Icon name="file-text" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{pdf.filename} ({formatBytes(pdf.file_size)})
                     </span>
-                    <a href={`/api/files/${pdf.id}`} download class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">Download PDF</a>
+                    <a href={`/api/files/${pdf.id}`} download class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-semibold text-xs cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Download PDF</a>
                   </div>
-                  <iframe src={`/api/files/${pdf.id}`} class="pdf-viewer-iframe" title={pdf.filename}></iframe>
+                  <iframe src={`/api/files/${pdf.id}`} class="w-full h-[680px] border-none bg-[var(--bg-secondary)]" title={pdf.filename}></iframe>
                 </div>
               ))}
-              
               {images.map((img) => (
-                <div class="preview-pane-content hidden" id={`image-preview-${img.id}`}>
-                  <div class="preview-header-bar">
-                    <span class="file-name">
-                      <svg class="lucide lucide-image" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle; color: var(--accent-primary);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                      {img.filename} ({formatBytes(img.file_size)})
+                <div class="preview-pane-content hidden flex flex-col w-full" id={`image-preview-${img.id}`}>
+                  <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
+                    <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]">
+                      <Icon name="image" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{img.filename} ({formatBytes(img.file_size)})
                     </span>
-                    <a href={`/api/files/${img.id}`} download class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">Download Image</a>
+                    <a href={`/api/files/${img.id}`} download class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-semibold text-xs cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Download Image</a>
                   </div>
-                  <div class="image-preview-frame">
-                    <img src={`/api/files/${img.id}`} alt={img.filename} class="preview-image-img" />
+                  <div class="w-full flex justify-center items-center bg-[#0f0f11] p-8 min-h-[350px]">
+                    <img src={`/api/files/${img.id}`} alt={img.filename} class="max-w-full max-h-[600px] rounded-[var(--border-radius-md)] shadow-[0_8px_30px_rgba(0,0,0,0.5)] object-contain" />
                   </div>
                 </div>
               ))}
-
               {youtubeVideos.map((video) => {
                 const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
                 return (
-                  <div class="preview-pane-content hidden" id={`yt-preview-${video.id}`}>
-                    <div class="youtube-player-container-main" data-video-id={videoId} data-link-id={video.id} data-progress={video.watch_progress || 0}>
-                      <div class="player-wrapper-main">
-                        <div id={`yt-player-main-${video.id}`}></div>
+                  <div class="preview-pane-content hidden flex flex-col w-full" id={`yt-preview-${video.id}`}>
+                    <div class="youtube-player-container-main w-full bg-black" data-video-id={videoId} data-link-id={video.id} data-progress={video.watch_progress || 0}>
+                      <div class="relative aspect-video w-full bg-black">
+                        <div id={`yt-player-main-${video.id}`} class="absolute inset-0 w-full h-full border-none"></div>
                       </div>
-                      <div class="player-meta-main">
-                        <span class="player-title">
-                          <svg class="lucide lucide-video" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle; color: var(--accent-primary);"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"/><rect width="14" height="12" x="2" y="6" rx="2" ry="2"/></svg>
-                          {video.title || 'YouTube Resource'}
-                        </span>
-                        <span class="progress-info" id={`progress-text-main-${video.id}`}>
-                          Saved progress: {Math.floor((video.watch_progress || 0) / 60)}m {(video.watch_progress || 0) % 60}s
-                        </span>
+                      <div class="flex justify-between items-center px-6 py-4 bg-[var(--bg-primary)] border-t border-[var(--card-border)]">
+                        <span class="player-title font-semibold text-sm text-[var(--text-primary)]"><Icon name="video" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{video.title || 'YouTube Resource'}</span>
+                        <span class="progress-info text-xs text-[var(--text-muted)] font-medium" id={`progress-text-main-${video.id}`}>Saved progress: {Math.floor((video.watch_progress || 0) / 60)}m {(video.watch_progress || 0) % 60}s</span>
                       </div>
                     </div>
                   </div>
                 );
               })}
-
               {drivePreviews.filter(d => d.embedUrl).map((drive) => (
-                <div class="preview-pane-content hidden" id={`drive-preview-${drive.id}`}>
-                  <div class="preview-header-bar">
-                    <span class="file-name">
-                      <svg class="lucide lucide-folder" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle; color: var(--accent-primary);"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-                      {drive.title || 'Google Drive File'}
-                    </span>
-                    <a href={drive.url} target="_blank" class="btn btn-secondary btn-sm" style="padding: 6px 12px; font-size: 0.8rem;">Open Drive ↗</a>
+                <div class="preview-pane-content hidden flex flex-col w-full" id={`drive-preview-${drive.id}`}>
+                  <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
+                    <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]"><Icon name="folder" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{drive.title || 'Google Drive File'}</span>
+                    <a href={drive.url} target="_blank" class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-semibold text-xs cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Open Drive ↗</a>
                   </div>
-                  <iframe src={drive.embedUrl!} class="pdf-viewer-iframe" title={drive.title || 'Google Drive Embed'}></iframe>
+                  <iframe src={drive.embedUrl!} class="w-full h-[680px] border-none bg-[var(--bg-secondary)]" title={drive.title || 'Google Drive Embed'}></iframe>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        <div class="prose note-body-rendered" id="note-body-rendered">
-          <!-- Server side static loading fallback, client marked updates it -->
-          <div class="loading-prose">Rendering notes content...</div>
+        <div id="note-body-rendered" class="min-h-[200px] prose max-w-none [&_img]:max-w-full [&_img]:rounded-[var(--border-radius-md)] [&_img]:my-6 [&_img]:border [&_img]:border-[var(--card-border)]">
+          <div class="text-[var(--text-muted)] italic">Rendering notes content...</div>
         </div>
 
-        <!-- Backlinks Section -->
         {incomingBacklinks.length > 0 && (
-          <div class="backlinks-section">
-            <h4>Linked references (Backlinks)</h4>
-            <div class="backlinks-list">
+          <div class="border-t border-[var(--card-border)] pt-6 mt-6">
+            <h4 class="text-sm text-[var(--text-muted)] mb-3 font-semibold uppercase tracking-wider">Linked references (Backlinks)</h4>
+            <div class="flex flex-wrap gap-2.5">
               {incomingBacklinks.map((bl) => (
-                <a href={`/notes/${bl.id}`} class="backlink-item">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
-                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
-                  </svg>
+                <a href={`/notes/${bl.id}`} class="inline-flex items-center gap-2 bg-[var(--bg-secondary)] border border-[var(--card-border)] px-3 py-1.5 rounded-[var(--border-radius-md)] text-sm text-[var(--text-secondary)] font-medium no-underline hover:border-[var(--accent-primary)] hover:text-[var(--text-primary)]">
+                  <Icon name="link" size={14} />
                   <span>{bl.title}</span>
                 </a>
               ))}
             </div>
           </div>
         )}
-      </div>
+      </BentoCard>
 
-      <!-- EDIT PANEL (Only visible during edit-mode, splits screen) -->
-      <div class="edit-pane bento-card hidden" id="edit-pane">
-        <div class="edit-form">
-          <input type="text" id="edit-title-input" value={note.title} class="edit-title-input" />
-          
-          <div class="edit-meta-grid">
-            <div class="form-group">
-              <label>Category</label>
-              <input type="text" id="edit-category-input" value={note.category || ''} />
-            </div>
-            <div class="form-group">
-              <label>Semester</label>
-              <input type="text" id="edit-semester-input" value={note.semester || ''} />
-            </div>
-            <div class="form-group">
-              <label>Topic</label>
-              <input type="text" id="edit-topic-input" value={note.topic || ''} />
-            </div>
-            <div class="form-group">
-              <label>Tags (comma separated)</label>
-              <input type="text" id="edit-tags-input" value={tags.join(', ')} />
-            </div>
+      <div id="side-widgets" class="flex flex-col gap-5">
+        <BentoCard class="flex flex-col gap-5 !p-5 cursor-pointer transition-all duration-[var(--transition-fast)]" id="upload-zone" padding>
+          <div class="border-2 border-dashed border-[var(--card-border)] rounded-[var(--border-radius-md)] py-6 px-4 text-center flex flex-col items-center gap-1.5 relative">
+            <Icon name="upload" size={24} class="text-[var(--text-muted)] mb-1" />
+            <p class="text-sm font-semibold">Drag & Drop Files Here</p>
+            <span class="text-xs text-[var(--text-muted)]">or click to browse</span>
+            <input type="file" id="file-input-field" class="absolute inset-0 opacity-0 cursor-pointer" multiple />
           </div>
-
-          <textarea id="edit-content-input" class="edit-content-textarea">{note.content}</textarea>
-          
-          <div class="edit-actions">
-            <button class="btn btn-secondary" id="cancel-edit-btn">Cancel</button>
-            <button class="btn btn-primary" id="save-edit-btn">Save Changes</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- SIDEBAR WIDGETS (Only visible in normal/read mode, hidden in focus mode) -->
-      <div class="side-widgets" id="side-widgets">
-        <!-- Drag-and-drop file upload zone -->
-        <div class="bento-card upload-zone" id="upload-zone">
-          <div class="upload-prompt">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="upload-icon">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"></path>
-            </svg>
-            <p>Drag & Drop Files Here</p>
-            <span>or click to browse</span>
-            <input type="file" id="file-input-field" class="hidden-input" multiple />
-          </div>
-
-          <!-- Attachments list -->
-          <div class="attachments-container">
-            <h4>Attachments</h4>
-            <ul class="attachments-list" id="attachments-list">
+          <div class="flex flex-col gap-2">
+            <h4 class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">Attachments</h4>
+            <ul id="attachments-list" class="flex flex-col gap-1.5 list-none">
               {attachments.length === 0 ? (
-                <li class="empty-attachment-text" id="empty-att-msg">No files attached yet</li>
+                <li id="empty-att-msg" class="text-sm text-[var(--text-muted)] italic">No files attached yet</li>
               ) : (
                 attachments.map((att) => (
-                  <li class="attachment-item" data-att-id={att.id}>
-                    <div class="att-info">
-                      <a href={`/api/files/${att.id}`} target="_blank" class="att-name-link" title="Open file">
-                        <svg class="lucide lucide-paperclip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle; color: var(--text-muted);"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  <li class="attachment-item flex justify-between items-center bg-[var(--bg-secondary)] border border-[var(--card-border)] px-3 py-2 rounded-[var(--border-radius-md)] text-sm" data-att-id={att.id}>
+                    <div class="flex flex-col min-w-0">
+                      <a href={`/api/files/${att.id}`} target="_blank" class="att-name-link font-medium text-[var(--text-secondary)] truncate hover:text-[var(--accent-primary)] no-underline">
+                        <Icon name="paperclip" size={14} class="mr-1.5 text-[var(--text-muted)]" />
                         <span class="att-filename">{att.filename}</span>
                       </a>
-                      <span class="att-size">{formatBytes(att.file_size)}</span>
+                      <span class="text-[0.7rem] text-[var(--text-muted)]">{formatBytes(att.file_size)}</span>
                     </div>
-                    <button class="delete-att-btn" data-att-id={att.id} title="Delete attachment">×</button>
+                    <button class="delete-att-btn text-lg text-[var(--text-muted)] cursor-pointer px-1 rounded hover:text-[var(--danger)] hover:bg-[var(--bg-tertiary)]" data-att-id={att.id} title="Delete attachment">×</button>
                   </li>
                 ))
               )}
             </ul>
           </div>
-        </div>
+        </BentoCard>
 
-        <!-- YouTube Video Embed Widget -->
         {links.some((l) => l.type === 'youtube') && (
-          <div class="bento-card youtube-widget">
-            <h3>YouTube Video Resources</h3>
-            <div class="videos-list">
+          <BentoCard class="flex flex-col gap-4">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">YouTube Video Resources</h3>
+            <div class="videos-list flex flex-col gap-5">
               {links.filter((l) => l.type === 'youtube').map((video) => {
                 const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
                 return (
-                  <div class="youtube-player-container" data-video-id={videoId} data-link-id={video.id} data-progress={video.watch_progress}>
-                    <div class="player-wrapper">
-                      <div id={`yt-player-${video.id}`}></div>
+                  <div class="youtube-player-container flex flex-col gap-2" data-video-id={videoId} data-link-id={video.id} data-progress={video.watch_progress}>
+                    <div class="relative aspect-video rounded-[var(--border-radius-md)] overflow-hidden bg-black border border-[var(--card-border)]">
+                      <div id={`yt-player-${video.id}`} class="absolute inset-0 w-full h-full border-none"></div>
                     </div>
-                    <div class="player-meta">
-                      <span class="player-title">{video.title || 'YouTube Resource'}</span>
-                      <span class="progress-info" id={`progress-text-${video.id}`}>
-                        Saved: {Math.floor(video.watch_progress / 60)}m {video.watch_progress % 60}s
-                      </span>
+                    <div class="flex justify-between items-center gap-2.5">
+                      <span class="player-title text-sm font-semibold text-[var(--text-primary)] truncate">{video.title || 'YouTube Resource'}</span>
+                      <span class="progress-info text-xs text-[var(--text-muted)] whitespace-nowrap" id={`progress-text-${video.id}`}>Saved: {Math.floor(video.watch_progress / 60)}m {video.watch_progress % 60}s</span>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <!-- Clickable timestamps list explanation -->
-            <div class="timestamp-help">
-              <svg class="lucide lucide-lightbulb" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 6px; display: inline-block; vertical-align: middle; color: var(--warning);"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A7 7 0 0 0 6 8c0 1 .5 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
-              **Tip:** Click any timestamp like `1:05` or `12:45` in the note content to jump directly to that part of the video!
+            <div class="text-xs text-[var(--text-muted)] leading-relaxed pt-2.5 border-t border-[var(--card-border)]">
+              <Icon name="zap" size={14} class="mr-1.5 text-[var(--warning)]" />
+              <strong>Tip:</strong> Click any timestamp like <code>1:05</code> or <code>12:45</code> in the note content to jump directly to that part of the video!
             </div>
-          </div>
+          </BentoCard>
         )}
 
-        <!-- Google Drive Widget -->
         {links.some((l) => l.type === 'drive') && (
-          <div class="bento-card drive-widget">
-            <h3>Connected Drive Files</h3>
-            <div class="drive-list">
+          <BentoCard class="flex flex-col gap-4">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">Connected Drive Files</h3>
+            <div class="flex flex-col gap-2 mt-2">
               {links.filter((l) => l.type === 'drive').map((link) => (
-                <a href={link.url} target="_blank" class="drive-card">
-                  <div class="drive-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M22 10v6M2 10v6M12 2v20M2 10h20M2 16h20M12 2L2 10M12 2l10 8M12 22L2 16M12 22l10-6"></path>
-                    </svg>
-                  </div>
-                  <div class="drive-card-info">
-                    <span class="drive-filename">{link.title || 'Google Drive File'}</span>
-                    <span class="drive-action">View on Google Drive ↗</span>
+                <a href={link.url} target="_blank" class="flex items-center gap-3 px-3.5 py-2.5 bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] transition-colors duration-[var(--transition-fast)] hover:border-[var(--accent-primary)] no-underline">
+                  <span class="text-[var(--accent-secondary)] flex items-center justify-center">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 10v6M2 10v6M12 2v20M2 10h20M2 16h20M12 2L2 10M12 2l10 8M12 22L2 16M12 22l10-6"></path></svg>
+                  </span>
+                  <div class="flex flex-col min-w-0">
+                    <span class="text-sm font-semibold text-[var(--text-primary)] truncate">{link.title || 'Google Drive File'}</span>
+                    <span class="text-[0.7rem] text-[var(--text-muted)]">View on Google Drive ↗</span>
                   </div>
                 </a>
               ))}
             </div>
-          </div>
+          </BentoCard>
         )}
 
-        <!-- Related Material Recommendations -->
         {relatedNotes.length > 0 && (
-          <div class="bento-card related-widget">
-            <h3>Related Materials</h3>
-            <div class="related-list">
+          <BentoCard class="flex flex-col gap-4">
+            <h3 class="text-sm font-semibold text-[var(--text-primary)]">Related Materials</h3>
+            <div class="flex flex-col gap-2 mt-2">
               {relatedNotes.map((rn) => (
-                <a href={`/notes/${rn.id}`} class="related-card">
-                  <span class="related-title">{rn.title}</span>
-                  <span class="related-meta">{rn.category} • {rn.semester}</span>
+                <a href={`/notes/${rn.id}`} class="flex flex-col gap-1 px-3.5 py-2.5 bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] transition-colors duration-[var(--transition-fast)] hover:border-[var(--accent-primary)] no-underline">
+                  <span class="text-sm font-semibold text-[var(--text-primary)]">{rn.title}</span>
+                  <span class="text-xs text-[var(--text-muted)]">{rn.category} • {rn.semester}</span>
                 </a>
               ))}
             </div>
-          </div>
+          </BentoCard>
         )}
       </div>
     </div>
+
+    <div id="edit-pane" class="hidden flex flex-col gap-5">
+      <BentoCard class="flex flex-col gap-5 !p-8">
+        <input type="text" id="edit-title-input" value={note.title} class="text-[1.75rem] font-bold border-b border-[var(--card-border)] pb-2 w-full text-[var(--text-primary)] bg-transparent outline-none" />
+        <div class="grid grid-cols-4 max-md:grid-cols-2 gap-3">
+          {[
+            { id: 'edit-category-input', value: note.category || '', label: 'Category' },
+            { id: 'edit-semester-input', value: note.semester || '', label: 'Semester' },
+            { id: 'edit-topic-input', value: note.topic || '', label: 'Topic' },
+            { id: 'edit-tags-input', value: tags.join(', '), label: 'Tags (comma separated)' },
+          ].map((f) => (
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">{f.label}</label>
+              <input type="text" id={f.id} value={f.value} class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3 py-2 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)]" />
+            </div>
+          ))}
+        </div>
+        <textarea id="edit-content-input" class="h-[400px] resize-vertical font-mono text-sm leading-relaxed bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] p-4 text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)]">{note.content}</textarea>
+        <div class="flex justify-end gap-3">
+          <button id="cancel-edit-btn" class="inline-flex items-center justify-center gap-2 px-[18px] py-2.5 rounded-[var(--border-radius-md)] font-semibold text-sm cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Cancel</button>
+          <button id="save-edit-btn" class="inline-flex items-center justify-center gap-2 px-[18px] py-2.5 rounded-[var(--border-radius-md)] font-semibold text-sm cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)]">Save Changes</button>
+        </div>
+      </BentoCard>
+    </div>
   </div>
 
-
-
-  <style>
-    /* Preview Hub Styling */
-    .preview-hub {
-      padding: 0;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      border: 1px solid var(--card-border);
-      background: var(--card-bg);
-      border-radius: var(--border-radius-lg);
-      margin-bottom: 24px;
-    }
-
-    .preview-hub-tabs {
-      display: flex;
-      flex-wrap: wrap;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--card-border);
-      padding: 6px 12px;
-      gap: 6.5px;
-    }
-
-    .preview-tab-btn {
-      padding: 8px 16px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-secondary);
-      border-radius: var(--border-radius-md);
-      cursor: pointer;
-      transition: all var(--transition-fast);
-      border: 1px solid transparent;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .preview-tab-btn:hover {
-      background: var(--bg-tertiary);
-      color: var(--text-primary);
-    }
-
-    .preview-tab-btn.active {
-      background: var(--card-bg);
-      color: var(--accent-primary);
-      border-color: var(--card-border);
-      box-shadow: var(--shadow-sm);
-    }
-
-    .preview-pane-content {
-      display: flex;
-      flex-direction: column;
-      width: 100%;
-    }
-
-    .preview-pane-content.hidden {
-      display: none;
-    }
-
-    .preview-header-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 24px;
-      background: var(--bg-primary);
-      border-bottom: 1px solid var(--card-border);
-    }
-
-    .preview-header-bar .file-name {
-      font-weight: 600;
-      font-size: 0.9rem;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 70%;
-    }
-
-    /* Main YouTube player wrapper */
-    .youtube-player-container-main {
-      width: 100%;
-      background: #000;
-    }
-
-    .player-wrapper-main {
-      position: relative;
-      aspect-ratio: 16/9;
-      width: 100%;
-      background: #000;
-    }
-
-    .player-wrapper-main iframe {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
-    .player-meta-main {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 16px 24px;
-      background: var(--bg-primary);
-      border-top: 1px solid var(--card-border);
-    }
-
-    .player-meta-main .player-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: var(--text-primary);
-    }
-
-    .player-meta-main .progress-info {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .image-preview-frame {
-      width: 100%;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      background: #0f0f11;
-      padding: 32px;
-      min-height: 350px;
-    }
-
-    .image-preview-frame img {
-      max-width: 100%;
-      max-height: 600px;
-      border-radius: var(--border-radius-md);
-      box-shadow: 0 8px 30px rgba(0,0,0,0.5);
-      object-fit: contain;
-    }
-    .focus-progress-bar-container {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 4px;
-      background: var(--bg-tertiary);
-      z-index: 1000;
-      display: none;
-    }
-
-    .focus-progress-bar {
-      height: 100%;
-      width: 0;
-      background: var(--accent-primary);
-      transition: width var(--transition-fast);
-    }
-
-    .note-view-wrapper {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    /* Toolbar styling */
-    .note-toolbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px 24px;
-    }
-
-    .toolbar-left, .toolbar-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .divider {
-      width: 1px;
-      height: 24px;
-      background: var(--card-border);
-      margin: 0 4px;
-    }
-
-    .toolbar-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 14px;
-      border-radius: var(--border-radius-md);
-      font-size: 0.85rem;
-      font-weight: 600;
-      cursor: pointer;
-      color: var(--text-secondary);
-      border: 1px solid var(--card-border);
-      transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-    }
-
-    .toolbar-btn:hover {
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-    }
-
-    .toolbar-btn.active {
-      background: var(--accent-glow);
-      border-color: var(--accent-primary);
-      color: var(--accent-primary);
-    }
-
-    .toolbar-btn.danger:hover {
-      background: hsla(347, 77%, 50%, 0.1);
-      border-color: var(--danger);
-      color: var(--danger);
-    }
-
-    .folder-indicator {
-      font-size: 0.85rem;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: var(--bg-secondary);
-      padding: 6px 12px;
-      border-radius: var(--border-radius-md);
-      border: 1px solid var(--card-border);
-    }
-
-    .folder-indicator select {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-secondary);
-      cursor: pointer;
-    }
-
-    .star-icon {
-      font-size: 1.05rem;
-    }
-
-    .toolbar-btn.active .star-icon {
-      color: var(--warning);
-    }
-
-    /* Layout structure */
-    .note-main-layout {
-      display: grid;
-      grid-template-columns: 8fr 4fr;
-      gap: 20px;
-      align-items: start;
-    }
-
-    @media (max-width: 1024px) {
-      .note-main-layout {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .read-pane {
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      padding: 32px;
-    }
-
-    .note-meta-header {
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 16px;
-    }
-
-    .note-title-text {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-      margin-bottom: 12px;
-    }
-
-    .note-metadata-tags {
-      display: flex;
-      gap: 8px;
-    }
-
-    .badge {
-      font-size: 0.75rem;
-      font-weight: 500;
-      padding: 3px 10px;
-      border-radius: var(--border-radius-full);
-      border: 1px solid var(--card-border);
-    }
-
-    .badge-category {
-      background: var(--accent-glow);
-      color: var(--accent-primary);
-      border-color: hsla(262, 83%, 58%, 0.15);
-    }
-
-    .badge-semester {
-      background: var(--bg-tertiary);
-      color: var(--text-secondary);
-    }
-
-    .badge-topic {
-      background: var(--bg-secondary);
-      color: var(--text-muted);
-    }
-
-    /* Prose notes rendering styling */
-    .note-body-rendered {
-      min-height: 200px;
-    }
-
-    .loading-prose {
-      color: var(--text-muted);
-      font-style: italic;
-    }
-
-    /* LaTeX display/inline rendering styles */
-    .math-display {
-      margin: 1.5em 0;
-      overflow-x: auto;
-      padding: 10px;
-      background: var(--bg-secondary);
-      border-radius: var(--border-radius-md);
-      text-align: center;
-    }
-
-    .math-inline {
-      padding: 0 4px;
-    }
-
-    /* Backlinks list */
-    .backlinks-section {
-      border-top: 1px solid var(--card-border);
-      padding-top: 24px;
-      margin-top: 24px;
-    }
-
-    .backlinks-section h4 {
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    .backlinks-list {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .backlink-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      padding: 6px 12px;
-      border-radius: var(--border-radius-md);
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-      font-weight: 500;
-    }
-
-    .backlink-item:hover {
-      border-color: var(--accent-primary);
-      color: var(--text-primary);
-    }
-
-    /* Sidebar widgets */
-    .side-widgets {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    /* Upload zone styling */
-    .upload-zone {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      padding: 20px;
-      transition: background var(--transition-fast), border-color var(--transition-fast);
-      cursor: pointer;
-    }
-
-    .upload-zone.dragover {
-      background: var(--accent-glow);
-      border-color: var(--accent-primary);
-    }
-
-    .upload-prompt {
-      border: 2px dashed var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 24px 16px;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 6px;
-      position: relative;
-    }
-
-    .upload-zone.dragover .upload-prompt {
-      border-color: var(--accent-primary);
-    }
-
-    .upload-icon {
-      color: var(--text-muted);
-      margin-bottom: 4px;
-    }
-
-    .upload-prompt p {
-      font-size: 0.9rem;
-      font-weight: 600;
-    }
-
-    .upload-prompt span {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    .hidden-input {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      opacity: 0;
-      cursor: pointer;
-    }
-
-    .attachments-container h4 {
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 8px;
-    }
-
-    .attachments-list {
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .empty-attachment-text {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      font-style: italic;
-    }
-
-    .attachment-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      padding: 8px 12px;
-      border-radius: var(--border-radius-md);
-      font-size: 0.85rem;
-    }
-
-    .att-info {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-
-    .att-name-link {
-      font-weight: 500;
-      color: var(--text-secondary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .att-name-link:hover {
-      color: var(--accent-primary);
-    }
-
-    .att-size {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-    }
-
-    .delete-att-btn {
-      color: var(--text-muted);
-      font-size: 1.1rem;
-      cursor: pointer;
-      padding: 0 4px;
-      border-radius: 4px;
-    }
-
-    .delete-att-btn:hover {
-      color: var(--danger);
-      background: var(--bg-tertiary);
-    }
-
-    /* YouTube widget */
-    .youtube-widget {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-
-    .videos-list {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .youtube-player-container {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .player-wrapper {
-      position: relative;
-      aspect-ratio: 16/9;
-      border-radius: var(--border-radius-md);
-      overflow: hidden;
-      background: black;
-      border: 1px solid var(--card-border);
-    }
-
-    .player-wrapper iframe {
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
-    .player-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .player-title {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .progress-info {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      white-space: nowrap;
-    }
-
-    .timestamp-help {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-      line-height: 1.5;
-      padding-top: 10px;
-      border-top: 1px solid var(--card-border);
-    }
-
-    /* Google Drive Files styling */
-    .drive-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .drive-card {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 10px 14px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      transition: border-color var(--transition-fast);
-    }
-
-    .drive-card:hover {
-      border-color: var(--accent-primary);
-    }
-
-    .drive-icon {
-      color: var(--accent-secondary);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .drive-card-info {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-
-    .drive-filename {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .drive-action {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-    }
-
-    /* Related Materials widget */
-    .related-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      margin-top: 8px;
-    }
-
-    .related-card {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 10px 14px;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      transition: border-color var(--transition-fast);
-    }
-
-    .related-card:hover {
-      border-color: var(--accent-primary);
-    }
-
-    .related-title {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .related-meta {
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
-
-    /* EDIT PANE layout */
-    .edit-pane {
-      padding: 32px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .edit-pane.hidden {
-      display: none;
-    }
-
-    .edit-form {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .edit-title-input {
-      font-size: 1.75rem;
-      font-weight: 700;
-      border-bottom: 1px solid var(--card-border);
-      padding-bottom: 8px;
-      width: 100%;
-      color: var(--text-primary);
-    }
-
-    .edit-meta-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-    }
-
-    @media (max-width: 768px) {
-      .edit-meta-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-    }
-
-    .edit-meta-grid input {
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 8px 12px;
-      font-size: 0.85rem;
-      color: var(--text-primary);
-    }
-
-    .edit-content-textarea {
-      height: 400px;
-      resize: vertical;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.95rem;
-      line-height: 1.6;
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 16px;
-      color: var(--text-primary);
-    }
-
-    .edit-content-textarea:focus {
-      border-color: var(--accent-primary);
-    }
-
-    .edit-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 12px;
-    }
-
-
-
-    /* Focus Mode active styles */
-    body.focus-active .sidebar,
-    body.focus-active .top-nav,
-    body.focus-active #side-widgets,
-    body.focus-active .note-toolbar {
-      display: none !important;
-    }
-
-    body.focus-active .main-content {
-      padding: 0 !important;
-      background: var(--bg-primary);
-      display: flex;
-      justify-content: center;
-      overflow-y: auto;
-    }
-
-    body.focus-active .note-main-layout {
-      grid-template-columns: 1fr;
-      width: 720px;
-      max-width: 90%;
-      margin: 48px auto;
-    }
-
-    body.focus-active .read-pane {
-      background: none !important;
-      border: none !important;
-      backdrop-filter: none !important;
-      box-shadow: none !important;
-      padding: 0;
-    }
-
-    /* Markdown prose customization */
-    .prose img {
-      max-width: 100%;
-      border-radius: var(--border-radius-md);
-      margin: 1.5em 0;
-      border: 1px solid var(--card-border);
-    }
-
-    /* Edit Split layout */
-    .note-view-wrapper.editing .note-main-layout {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    @media (max-width: 1024px) {
-      .note-view-wrapper.editing .note-main-layout {
-        grid-template-columns: 1fr;
-      }
-    }
-
-    .note-view-wrapper.editing #side-widgets {
-      display: none;
-    }
-
-    .desktop-only {
-      display: inline;
-    }
-
-    @media (max-width: 640px) {
-      .desktop-only {
-        display: none;
-      }
-    }
-  </style>
-
-  <!-- Marked and KaTeX for client-side math and markdown parsing -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" is:inline></script>
   <script src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js" is:inline></script>
 
-  <script>
-    const noteViewWrapper = document.getElementById('note-view-wrapper') as HTMLDivElement;
-    const noteId = noteViewWrapper?.dataset.noteId;
+  <style is:global>
+    body.focus-active #sidebar { display: none !important; }
+    body.focus-active header { display: none !important; }
+    body.focus-active #side-widgets { display: none !important; }
+    body.focus-active main { padding: 0 !important; background: var(--bg-primary); display: flex; justify-content: center; overflow-y: auto; }
+    body.focus-active #note-main-layout { grid-template-columns: 1fr; width: 720px; max-width: 90%; margin: 48px auto; }
+    body.focus-active #note-body-rendered { background: none !important; }
+    #note-view-wrapper.editing #note-main-layout { grid-template-columns: 1fr 1fr; }
+    @media (max-width: 1024px) { #note-view-wrapper.editing #note-main-layout { grid-template-columns: 1fr; } }
+    #note-view-wrapper.editing #side-widgets { display: none; }
+    .preview-tab-btn.active { background: var(--card-bg); color: var(--accent-primary); border-color: var(--card-border); box-shadow: var(--shadow-sm); }
+    .preview-pane-content.hidden { display: none; }
+    .math-display { margin: 1.5em 0; overflow-x: auto; padding: 10px; background: var(--bg-secondary); border-radius: var(--border-radius-md); text-align: center; }
+    .math-inline { padding: 0 4px; }
+  </style>
 
+  <script>
+    const noteViewWrapper = document.getElementById('note-view-wrapper');
+    const noteId = noteViewWrapper?.dataset.noteId;
     const readPane = document.getElementById('read-pane');
     const editPane = document.getElementById('edit-pane');
     const editModeBtn = document.getElementById('edit-mode-btn');
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
     const saveEditBtn = document.getElementById('save-edit-btn');
-
-    // Title & Content Inputs for edit mode
-    const editTitleInput = document.getElementById('edit-title-input') as HTMLInputElement;
-    const editContentInput = document.getElementById('edit-content-input') as HTMLTextAreaElement;
-    const editCategoryInput = document.getElementById('edit-category-input') as HTMLInputElement;
-    const editSemesterInput = document.getElementById('edit-semester-input') as HTMLInputElement;
-    const editTopicInput = document.getElementById('edit-topic-input') as HTMLInputElement;
-    const editTagsInput = document.getElementById('edit-tags-input') as HTMLInputElement;
-
-    // View content target
+    const editTitleInput = document.getElementById('edit-title-input');
+    const editContentInput = document.getElementById('edit-content-input');
+    const editCategoryInput = document.getElementById('edit-category-input');
+    const editSemesterInput = document.getElementById('edit-semester-input');
+    const editTopicInput = document.getElementById('edit-topic-input');
+    const editTagsInput = document.getElementById('edit-tags-input');
     const viewTitleText = document.getElementById('note-view-title');
     const viewBodyRendered = document.getElementById('note-body-rendered');
 
-    // Rendering content helper (runs on client)
-    const renderContent = (markdownText: string) => {
+    const renderContent = (markdownText) => {
       if (!viewBodyRendered) return;
-
-      // 1. Markdown
-      // @ts-ignore
       let html = typeof marked !== 'undefined' ? marked.parse(markdownText) : markdownText;
-
-      // 2. LaTeX Display Math
-      html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match: string, equation: string) => {
-        try {
-          // @ts-ignore
-          return `<div class="math-display">${katex.renderToString(equation, { displayMode: true, throwOnError: false })}</div>`;
-        } catch (e) {
-          return match;
-        }
+      html = html.replace(/\$\$([\s\S]*?)\$\$/g, (match, equation) => {
+        try { return `<div class="math-display">${katex.renderToString(equation, { displayMode: true, throwOnError: false })}</div>`; } catch { return match; }
       });
-
-      // 3. LaTeX Inline Math
-      html = html.replace(/\$([^$\n]+?)\$/g, (match: string, equation: string) => {
-        try {
-          // @ts-ignore
-          return `<span class="math-inline">${katex.renderToString(equation, { displayMode: false, throwOnError: false })}</span>`;
-        } catch (e) {
-          return match;
-        }
+      html = html.replace(/\$([^$\n]+?)\$/g, (match, equation) => {
+        try { return `<span class="math-inline">${katex.renderToString(equation, { displayMode: false, throwOnError: false })}</span>`; } catch { return match; }
       });
-
-      // 4. Wrap naked timestamps inside a link for YT video seek logic
-      // Matches 1:05, 12:45, 1:23:45
-      html = html.replace(/\b(\d{1,2}:)?(\d{1,2}):(\d{2})\b/g, (match: string) => {
+      html = html.replace(/\b(\d{1,2}:)?(\d{1,2}):(\d{2})\b/g, (match) => {
         const parts = match.split(':').map(Number);
-        let seconds = 0;
-        if (parts.length === 3) {
-          seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
-        } else if (parts.length === 2) {
-          seconds = parts[0] * 60 + parts[1];
-        }
+        let seconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
         return `<a href="#" class="youtube-timestamp" data-seconds="${seconds}">${match}</a>`;
       });
-
       viewBodyRendered.innerHTML = html;
-
-      // Bind click triggers for timestamps
-      const tsLinks = viewBodyRendered.querySelectorAll('.youtube-timestamp');
-      tsLinks.forEach((link) => {
-        link.addEventListener('click', (e) => {
-          e.preventDefault();
-          const secs = Number((link as HTMLElement).dataset.seconds);
-          seekActiveVideos(secs);
-        });
+      viewBodyRendered.querySelectorAll('.youtube-timestamp').forEach((link) => {
+        link.addEventListener('click', (e) => { e.preventDefault(); seekActiveVideos(Number(link.dataset.seconds)); });
       });
-
     };
 
-    // Preview Hub Tabs toggle logic
     const previewTabs = document.querySelectorAll('.preview-tab-btn');
     const previewPanes = document.querySelectorAll('.preview-pane-content');
-
     if (previewTabs.length > 0) {
       previewTabs[0].classList.add('active');
-      const firstTargetId = (previewTabs[0] as HTMLElement).dataset.targetId;
-      if (firstTargetId) {
-        document.getElementById(firstTargetId)?.classList.remove('hidden');
-      }
-
+      const firstTargetId = previewTabs[0].dataset.targetId;
+      if (firstTargetId) document.getElementById(firstTargetId)?.classList.remove('hidden');
       previewTabs.forEach((tab) => {
         tab.addEventListener('click', () => {
           previewTabs.forEach((t) => t.classList.remove('active'));
           previewPanes.forEach((p) => p.classList.add('hidden'));
-
           tab.classList.add('active');
-          const targetId = (tab as HTMLElement).dataset.targetId;
-          if (targetId) {
-            document.getElementById(targetId)?.classList.remove('hidden');
-          }
+          const targetId = tab.dataset.targetId;
+          if (targetId) document.getElementById(targetId)?.classList.remove('hidden');
         });
       });
     }
 
-    // Run first render on page load
-    if (editContentInput) {
-      renderContent(editContentInput.value);
-    }
+    if (editContentInput) renderContent(editContentInput.value);
 
-    // Toggle Edit Mode Panel (Split View)
     editModeBtn?.addEventListener('click', () => {
       const isEditing = noteViewWrapper.classList.toggle('editing');
       editPane?.classList.toggle('hidden');
-      
-      if (isEditing) {
-        editModeBtn.classList.add('active');
-        editContentInput.focus();
-      } else {
-        editModeBtn.classList.remove('active');
-      }
+      if (isEditing) { editModeBtn.classList.add('active'); editContentInput.focus(); }
+      else editModeBtn.classList.remove('active');
     });
 
     cancelEditBtn?.addEventListener('click', () => {
       noteViewWrapper.classList.remove('editing');
       editPane?.classList.add('hidden');
       editModeBtn?.classList.remove('active');
-      
-      // Reset input values
       if (editTitleInput) editTitleInput.value = viewTitleText?.textContent || '';
     });
 
-    // Save Edit Panel changes
     saveEditBtn?.addEventListener('click', async () => {
       const title = editTitleInput.value.trim();
       const content = editContentInput.value;
       const category = editCategoryInput.value.trim();
       const semester = editSemesterInput.value.trim();
       const topic = editTopicInput.value.trim();
-      const tagsString = editTagsInput.value;
-
-      if (!title) {
-        alert('Title is required');
-        return;
-      }
-
-      const tags = tagsString
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0);
-
+      const tags = editTagsInput.value.split(',').map((t) => t.trim()).filter((t) => t.length > 0);
+      if (!title) { alert('Title is required'); return; }
       try {
-        saveEditBtn.setAttribute('disabled', 'true');
-        saveEditBtn.textContent = 'Saving...';
-
+        saveEditBtn.setAttribute('disabled', 'true'); saveEditBtn.textContent = 'Saving...';
         const res = await fetch(`/api/notes/${noteId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title,
-            content,
-            category,
-            semester,
-            topic,
-            tags,
-          }),
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, content, category, semester, topic, tags }),
         });
-
-        if (res.ok) {
-          window.location.reload();
-        } else {
-          const data = await res.json();
-          alert(data.error || 'Failed to update note');
-        }
-      } catch (e) {
-        console.error(e);
-        alert('Failed to save changes');
-      } finally {
-        saveEditBtn.removeAttribute('disabled');
-        saveEditBtn.textContent = 'Save Changes';
-      }
+        if (res.ok) window.location.reload();
+        else { const data = await res.json(); alert(data.error || 'Failed to update note'); }
+      } catch { alert('Failed to save changes'); }
+      finally { saveEditBtn.removeAttribute('disabled'); saveEditBtn.textContent = 'Save Changes'; }
     });
 
-    // Focus Mode Toggle (Distraction Free)
     const focusModeBtn = document.getElementById('focus-mode-btn');
     const focusProgressContainer = document.getElementById('focus-progress-container');
     const focusProgressBar = document.getElementById('focus-progress');
-
     focusModeBtn?.addEventListener('click', () => {
       const isFocus = document.body.classList.toggle('focus-active');
       focusModeBtn.classList.toggle('active');
-      
-      if (isFocus) {
-        focusProgressContainer!.style.display = 'block';
-        
-        // Add scroll listener for progress tracking
-        window.addEventListener('scroll', trackingFocusScroll);
-        trackingFocusScroll(); // initial trigger
-      } else {
-        focusProgressContainer!.style.display = 'none';
-        window.removeEventListener('scroll', trackingFocusScroll);
-      }
+      if (isFocus) { focusProgressContainer.style.display = 'block'; window.addEventListener('scroll', trackingFocusScroll); trackingFocusScroll(); }
+      else { focusProgressContainer.style.display = 'none'; window.removeEventListener('scroll', trackingFocusScroll); }
     });
-
     const trackingFocusScroll = () => {
       if (!focusProgressBar) return;
       const winScroll = document.documentElement.scrollTop || document.body.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      const scrolled = height > 0 ? (winScroll / height) * 100 : 0;
-      focusProgressBar.style.width = scrolled + '%';
+      focusProgressBar.style.width = height > 0 ? (winScroll / height) * 100 + '%' : '0';
     };
 
-    // Bookmark Toggle (Favorite)
     const bookmarkBtn = document.getElementById('bookmark-toggle-btn');
     bookmarkBtn?.addEventListener('click', async () => {
       const isFavorite = bookmarkBtn.classList.toggle('active');
-      try {
-        await fetch(`/api/notes/${noteId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ is_favorite: isFavorite }),
-        });
-      } catch (e) {
-        console.error(e);
-      }
+      try { await fetch(`/api/notes/${noteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_favorite: isFavorite }) }); } catch {}
     });
 
-    // Pin Toggle
     const pinBtn = document.getElementById('pin-toggle-btn');
     pinBtn?.addEventListener('click', async () => {
       const isPinned = pinBtn.classList.toggle('active');
-      try {
-        await fetch(`/api/notes/${noteId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ is_pinned: isPinned }),
-        });
-      } catch (e) {
-        console.error(e);
-      }
+      try { await fetch(`/api/notes/${noteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_pinned: isPinned }) }); } catch {}
     });
 
-    // Move Collection (Folder dropdown)
-    const moveColSelect = document.getElementById('move-collection-select') as HTMLSelectElement;
+    const moveColSelect = document.getElementById('move-collection-select');
     moveColSelect?.addEventListener('change', async () => {
       const colId = moveColSelect.value || null;
-      try {
-        const res = await fetch(`/api/notes/${noteId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ collection_id: colId }),
-        });
-        if (!res.ok) alert('Failed to move folder');
-      } catch (e) {
-        console.error(e);
-      }
+      try { await fetch(`/api/notes/${noteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ collection_id: colId }) }); window.location.reload(); } catch {}
     });
 
-    // Delete Note
-    const deleteBtn = document.getElementById('delete-note-btn');
-    deleteBtn?.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to delete this study material? This will delete all R2 attachments and YouTube progress links.')) {
+    const deleteNoteBtn = document.getElementById('delete-note-btn');
+    deleteNoteBtn?.addEventListener('click', async () => {
+      if (confirm('Are you sure you want to delete this note and ALL its attached files?')) {
         try {
           const res = await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
-          if (res.ok) {
-            window.location.href = '/notes';
-          } else {
-            alert('Failed to delete note');
-          }
-        } catch (e) {
-          console.error(e);
-        }
+          if (res.ok) window.location.href = '/notes';
+          else { const data = await res.json(); alert(data.error || 'Failed to delete note'); }
+        } catch { alert('An error occurred'); }
       }
     });
 
-    // Drag and Drop File Upload logic
+    // YouTube IFrame API - loads after the page is ready
+    let playerPromises = {};
+    let tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    let firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+    window.onYouTubeIframeAPIReady = () => {
+      document.querySelectorAll('.youtube-player-container, .youtube-player-container-main').forEach((container) => {
+        const videoId = container.dataset.videoId;
+        const linkId = container.dataset.linkId;
+        const savedProgress = Number(container.dataset.progress || 0);
+        if (!videoId) return;
+
+        const playerDiv = container.querySelector('[id^="yt-player-"], [id^="yt-player-main-"]');
+        if (!playerDiv) return;
+
+        const isMain = playerDiv.id.includes('main');
+        const player = new YT.Player(playerDiv.id, {
+          videoId,
+          playerVars: { start: savedProgress, rel: 0, modestbranding: 1 },
+          events: {
+            onReady: () => {
+              if (savedProgress > 0) player.seekTo(savedProgress, true);
+            },
+            onStateChange: (event) => {
+              const progressTextId = isMain ? `progress-text-main-${linkId}` : `progress-text-${linkId}`;
+              const progressEl = document.getElementById(progressTextId);
+              if (event.data === YT.PlayerState.PLAYING) {
+                const interval = setInterval(() => {
+                  const currentTime = Math.floor(player.getCurrentTime());
+                  const mins = Math.floor(currentTime / 60);
+                  const secs = currentTime % 60;
+                  if (progressEl) progressEl.textContent = `${mins}m ${secs}s`;
+                  navigator.sendBeacon('/api/progress', new URLSearchParams({ linkId, progress: String(currentTime) }));
+                }, 5000);
+                playerDiv.dataset.intervalId = interval;
+              } else {
+                clearInterval(Number(playerDiv.dataset.intervalId));
+              }
+            },
+          },
+        });
+        playerPromises[playerDiv.id] = player;
+      });
+    };
+
+    window.seekActiveVideos = (seconds) => {
+      Object.values(playerPromises).forEach((player) => {
+        if (player && player.seekTo) player.seekTo(seconds, true);
+      });
+    };
+
+    // Upload zone drag-and-drop
     const uploadZone = document.getElementById('upload-zone');
-    const fileInputField = document.getElementById('file-input-field') as HTMLInputElement;
+    const fileInput = document.getElementById('file-input-field');
     const attachmentsList = document.getElementById('attachments-list');
     const emptyAttMsg = document.getElementById('empty-att-msg');
 
-    const handleUploadFiles = async (files: FileList) => {
-      if (!files || files.length === 0) return;
+    uploadZone?.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+    uploadZone?.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+    uploadZone?.addEventListener('drop', (e) => { e.preventDefault(); uploadZone.classList.remove('dragover'); if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files); });
+    fileInput?.addEventListener('change', () => { if (fileInput.files.length > 0) uploadFiles(fileInput.files); });
 
-      const formatBytesLocal = (bytes: number) => {
-        if (bytes === 0) return '0 B';
-        const k = 1024;
-        const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-      };
-
-      for (const file of files) {
+    const uploadFiles = async (files) => {
+      for (const file of Array.from(files)) {
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('noteId', noteId!);
-
+        formData.append('noteId', noteId);
         try {
-          // Visual state loading feedback
-          const loadingLi = document.createElement('li');
-          loadingLi.className = 'attachment-item';
-          loadingLi.innerHTML = `<span>⏳ Uploading "${file.name}"...</span>`;
-          attachmentsList?.appendChild(loadingLi);
-          emptyAttMsg?.classList.add('hidden');
-
-          const res = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData,
-          });
-
-          const data = await res.json();
-          loadingLi.remove();
-
-          if (res.ok) {
-            const newAtt = data.attachment;
-            const li = document.createElement('li');
-            li.className = 'attachment-item';
-            li.dataset.attId = newAtt.id;
-            li.innerHTML = `
-              <div class="att-info">
-                <a href="/api/files/${newAtt.id}" target="_blank" class="att-name-link" title="Open file">
-                  📎 <span class="att-filename">${newAtt.filename}</span>
-                </a>
-                <span class="att-size">${formatBytesLocal(newAtt.file_size)}</span>
-              </div>
-              <button class="delete-att-btn" data-att-id="${newAtt.id}">×</button>
-            `;
-            attachmentsList?.appendChild(li);
-            
-            // Re-bind delete trigger
-            bindDeleteAttachmentBtn(li.querySelector('.delete-att-btn') as HTMLButtonElement);
-          } else {
-            alert(`Failed to upload ${file.name}: ${data.error}`);
-            if (attachmentsList?.children.length === 0) emptyAttMsg?.classList.remove('hidden');
-          }
-        } catch (e) {
-          console.error(e);
-          alert('Upload failed due to connection error.');
-        }
+          const res = await fetch('/api/upload', { method: 'POST', body: formData });
+          if (res.ok) window.location.reload();
+          else { const data = await res.json(); alert('Upload failed: ' + data.error); }
+        } catch { alert('Upload failed due to connection error'); }
       }
     };
 
-    // Attach drag & drop triggers
-    uploadZone?.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      uploadZone.classList.add('dragover');
-    });
-
-    uploadZone?.addEventListener('dragleave', () => {
-      uploadZone.classList.remove('dragover');
-    });
-
-    uploadZone?.addEventListener('drop', (e) => {
-      e.preventDefault();
-      uploadZone.classList.remove('dragover');
-      const files = e.dataTransfer?.files;
-      if (files) handleUploadFiles(files);
-    });
-
-    fileInputField?.addEventListener('change', () => {
-      const files = fileInputField.files;
-      if (files) handleUploadFiles(files);
-    });
-
-    // Delete attachment helper
-    const bindDeleteAttachmentBtn = (btn: HTMLButtonElement) => {
+    // Delete individual attachment
+    document.querySelectorAll('.delete-att-btn').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const attId = btn.dataset.attId;
-        if (confirm('Delete this file?')) {
+        if (!attId) return;
+        if (confirm('Delete this attachment from storage?')) {
           try {
             const res = await fetch(`/api/files/${attId}`, { method: 'DELETE' });
-            if (res.ok) {
-              const li = btn.closest('.attachment-item');
-              li?.remove();
-              if (attachmentsList?.children.length === 0) {
-                emptyAttMsg?.classList.remove('hidden');
-              }
-            } else {
-              alert('Failed to delete file');
-            }
-          } catch (err) {
-            console.error(err);
-          }
+            if (res.ok) window.location.reload();
+            else alert('Failed to delete attachment');
+          } catch { alert('An error occurred'); }
         }
       });
-    };
-
-    // Bind all initial attachment delete triggers
-    const initialDeleteBtns = document.querySelectorAll('.delete-att-btn');
-    initialDeleteBtns.forEach((btn) => bindDeleteAttachmentBtn(btn as HTMLButtonElement));
-
-    // YouTube API watch progress tracker & seeks timestamps logic
-    const ytPlayers = new Map<string, any>();
-    const activeVideoContainers = document.querySelectorAll('.youtube-player-container-main');
-
-    // Make YouTube seek functional
-    const seekActiveVideos = (seconds: number) => {
-      ytPlayers.forEach((player) => {
-        try {
-          player.seekTo(seconds, true);
-          player.playVideo();
-        } catch (e) {
-          console.error('Failed to seek player:', e);
-        }
-      });
-    };
-
-    // Load YT Player script
-    if (activeVideoContainers.length > 0) {
-      const tag = document.createElement('script');
-      tag.src = "https://www.youtube.com/iframe_api";
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-    }
-
-    // Global YouTube API Ready Callback
-    // @ts-ignore
-    window.onYouTubeIframeAPIReady = () => {
-      activeVideoContainers.forEach((container) => {
-        const linkId = (container as HTMLElement).dataset.linkId;
-        const videoId = (container as HTMLElement).dataset.videoId;
-        const initialProgress = Number((container as HTMLElement).dataset.progress) || 0;
-        const progressText = document.getElementById(`progress-text-main-${linkId}`);
-
-        let lastSavedTime = initialProgress;
-
-        // @ts-ignore
-        const player = new YT.Player(`yt-player-main-${linkId}`, {
-          height: '100%',
-          width: '100%',
-          videoId: videoId,
-          playerVars: {
-            start: initialProgress,
-            rel: 0,
-            modestbranding: 1
-          },
-          events: {
-            onStateChange: (event: any) => {
-              // @ts-ignore
-              if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
-                saveProgress(player.getCurrentTime());
-              }
-            }
-          }
-        });
-
-        // Periodically check/save progress (every 5 seconds while playing)
-        setInterval(() => {
-          try {
-            // @ts-ignore
-            if (player && player.getPlayerState() === YT.PlayerState.PLAYING) {
-              const currentTime = Math.round(player.getCurrentTime());
-              if (Math.abs(currentTime - lastSavedTime) >= 5) {
-                saveProgress(currentTime);
-              }
-            }
-          } catch (e) {}
-        }, 5000);
-
-        const saveProgress = async (currentTime: number) => {
-          const roundedTime = Math.round(currentTime);
-          lastSavedTime = roundedTime;
-          
-          if (progressText) {
-            const mins = Math.floor(roundedTime / 60);
-            const secs = roundedTime % 60;
-            progressText.textContent = `Saved progress: ${mins}m ${secs}s`;
-          }
-
-          try {
-            await fetch('/api/progress', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                linkId: linkId,
-                progress: roundedTime
-              })
-            });
-          } catch (e) {
-            console.error('Failed to auto save progress:', e);
-          }
-        };
-
-        ytPlayers.set(linkId!, player);
-      });
-    };
+    });
   </script>
 </Layout>

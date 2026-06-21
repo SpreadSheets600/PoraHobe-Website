@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import cloudflare from '@astrojs/cloudflare';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -63,7 +64,7 @@ export default defineConfig({
   output: 'server',
   adapter: cloudflare(),
   vite: {
-    plugins: [awsSdkBrowserRuntimePlugin()],
+    plugins: [tailwindcss(), awsSdkBrowserRuntimePlugin()],
     resolve: {
       alias: {
         // Turn emitWarningIfUnsupportedVersion Symbol stub → no-op function

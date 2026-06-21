@@ -1,12 +1,11 @@
 import type { APIRoute } from 'astro';
 import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { FetchHttpHandler, streamCollector } from '@smithy/fetch-http-handler';
+import { FetchHttpHandler } from '@smithy/fetch-http-handler';
 import { env } from 'cloudflare:workers';
 
 function createS3Client(s3Endpoint: string, s3Region: string, s3AccessKeyId: string, s3SecretKey: string) {
   return new S3Client({
     requestHandler: new FetchHttpHandler(),
-    streamCollector,
     endpoint: s3Endpoint,
     region: s3Region,
     credentials: {
@@ -23,40 +22,27 @@ export const GET: APIRoute = async ({ params, locals }) => {
     const user = locals.user;
     const { id } = params;
 
-    if (!db || !user) {
-      return new Response('Unauthorized', { status: 401 });
+    if (!db || !user) return new Response('Unauthorized', { status: 401 });
+    if (!id) return new Response('File ID is required', { status: 400 });
+
+    const s3Endpoint = env.S3_ENDPOINT_URL;
+    const s3SecretKey = env.S3_SECRET_ACCESS_KEY;
+    const s3AccessKeyId = env.S3_ACCESS_KEY_ID;
+    const s3BucketName = env.S3_BUCKET_NAME;
+    const s3Region = env.S3_REGION_NAME;
+
+    if (!s3Endpoint || !s3SecretKey || !s3AccessKeyId || !s3BucketName) {
+      return new Response('S3 storage credentials missing', { status: 500 });
     }
 
-    if (!id) {
-      return new Response('File ID is required', { status: 400 });
-    }
-
-    const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
-    const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
-    const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
-    const s3BucketName = env.S3_BUCKET_NAME || 'CityPulse';
-    const s3Region = env.S3_REGION_NAME || 'eu-central-003';
-
-    // Verify ownership of the note that has this attachment
     const attachment: any = await db
-      .prepare(
-        `SELECT a.*, n.user_id 
-         FROM attachments a 
-         JOIN notes n ON a.note_id = n.id 
-         WHERE a.id = ?`
-      )
+      .prepare(`SELECT a.*, n.user_id FROM attachments a JOIN notes n ON a.note_id = n.id WHERE a.id = ?`)
       .bind(id)
       .first();
 
-    if (!attachment) {
-      return new Response('File not found', { status: 404 });
-    }
+    if (!attachment) return new Response('File not found', { status: 404 });
+    if (attachment.user_id !== user.id) return new Response('Forbidden', { status: 403 });
 
-    if (attachment.user_id !== user.id) {
-      return new Response('Forbidden', { status: 403 });
-    }
-
-    // Initialize S3 client with browser-compatible request handler
     const s3 = createS3Client(s3Endpoint, s3Region, s3AccessKeyId, s3SecretKey);
 
     const command = new GetObjectCommand({
@@ -70,89 +56,70 @@ export const GET: APIRoute = async ({ params, locals }) => {
       return new Response('File not found in storage', { status: 404 });
     }
 
-    // Prepare headers
     const headers = new Headers();
     headers.set('Content-Type', attachment.mime_type || 'application/octet-stream');
     headers.set('Content-Length', attachment.file_size.toString());
-    
-    // Serve inline for images/pdfs, and as attachments for other files
+    headers.set('Accept-Ranges', 'bytes');
+    headers.set('Cache-Control', 'private, max-age=3600');
+
     const inlineTypes = ['image/', 'application/pdf', 'video/', 'audio/'];
     const isInline = inlineTypes.some((type) => attachment.mime_type?.startsWith(type));
-    
+
     if (isInline) {
       headers.set('Content-Disposition', `inline; filename="${encodeURIComponent(attachment.filename)}"`);
     } else {
       headers.set('Content-Disposition', `attachment; filename="${encodeURIComponent(attachment.filename)}"`);
     }
 
-    // The body from the S3 SDK with FetchHttpHandler is already a ReadableStream
+    // CORS headers for cross-origin file access
+    headers.set('Cross-Origin-Resource-Policy', 'cross-origin');
+
+    // The body from S3 SDK with FetchHttpHandler is a ReadableStream
     const bodyStream = fileObject.Body as ReadableStream;
 
-    return new Response(bodyStream, {
-      status: 200,
-      headers,
-    });
+    return new Response(bodyStream, { status: 200, headers });
   } catch (error: any) {
     console.error('Fetch File API Error:', error);
     return new Response('Internal Server Error', { status: 500 });
   }
 };
 
-// DELETE file
 export const DELETE: APIRoute = async ({ params, locals }) => {
   try {
     const db = env.DB;
     const user = locals.user;
     const { id } = params;
 
-    if (!db || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    if (!db || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
+    if (!id) return new Response(JSON.stringify({ error: 'File ID is required' }), { status: 400 });
+
+    const s3Endpoint = env.S3_ENDPOINT_URL;
+    const s3SecretKey = env.S3_SECRET_ACCESS_KEY;
+    const s3AccessKeyId = env.S3_ACCESS_KEY_ID;
+    const s3BucketName = env.S3_BUCKET_NAME;
+    const s3Region = env.S3_REGION_NAME;
+
+    if (!s3Endpoint || !s3SecretKey || !s3AccessKeyId || !s3BucketName) {
+      return new Response(JSON.stringify({ error: 'S3 storage credentials missing' }), { status: 500 });
     }
 
-    if (!id) {
-      return new Response(JSON.stringify({ error: 'File ID is required' }), { status: 400 });
-    }
-
-    const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
-    const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
-    const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
-    const s3BucketName = env.S3_BUCKET_NAME || 'CityPulse';
-    const s3Region = env.S3_REGION_NAME || 'eu-central-003';
-
-    // Check ownership
     const attachment: any = await db
-      .prepare(
-        `SELECT a.id, a.filename, a.r2_key, n.user_id 
-         FROM attachments a 
-         JOIN notes n ON a.note_id = n.id 
-         WHERE a.id = ?`
-      )
+      .prepare(`SELECT a.id, a.filename, a.r2_key, n.user_id FROM attachments a JOIN notes n ON a.note_id = n.id WHERE a.id = ?`)
       .bind(id)
       .first();
 
-    if (!attachment) {
-      return new Response(JSON.stringify({ error: 'File not found' }), { status: 404 });
-    }
+    if (!attachment) return new Response(JSON.stringify({ error: 'File not found' }), { status: 404 });
+    if (attachment.user_id !== user.id) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
 
-    if (attachment.user_id !== user.id) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403 });
-    }
-
-    // Initialize S3 client
     const s3 = createS3Client(s3Endpoint, s3Region, s3AccessKeyId, s3SecretKey);
 
-    // Delete object from Backblaze B2/S3
     try {
-      const command = new DeleteObjectCommand({
-        Bucket: s3BucketName,
-        Key: attachment.r2_key,
-      });
+      const command = new DeleteObjectCommand({ Bucket: s3BucketName, Key: attachment.r2_key });
       await s3.send(command);
     } catch (e) {
       console.error('Failed to delete from S3/B2:', attachment.r2_key, e);
     }
 
-    // Delete metadata from D1
     await db.prepare('DELETE FROM attachments WHERE id = ?').bind(id).run();
 
     return new Response(JSON.stringify({ success: true }), {

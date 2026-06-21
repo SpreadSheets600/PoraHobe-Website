@@ -1,0 +1,44 @@
+---
+interface Props {
+  variant?: "default" | "accent" | "pdf" | "image" | "youtube" | "drive" | "link";
+  class?: string;
+  href?: string;
+}
+
+const { variant = "default", href, class: className } = Astro.props;
+
+const variantStyles: Record<string, string> = {
+  default: "bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border-[var(--card-border)]",
+  accent: "bg-[var(--accent-glow)] text-[var(--accent-primary)] border-[hsla(262,83%,58%,0.15)]",
+  pdf: "bg-[rgba(239,68,68,0.08)] text-[#ef4444] border-[rgba(239,68,68,0.2)]",
+  image: "bg-[rgba(16,185,129,0.08)] text-[#10b981] border-[rgba(16,185,129,0.2)]",
+  youtube: "bg-[rgba(244,63,94,0.08)] text-[#f43f5e] border-[rgba(244,63,94,0.2)]",
+  drive: "bg-[rgba(59,130,246,0.08)] text-[#3b82f6] border-[rgba(59,130,246,0.2)]",
+  link: "bg-[rgba(245,158,11,0.08)] text-[#f59e0b] border-[rgba(245,158,11,0.2)]",
+};
+---
+
+{
+  href ? (
+    <a
+      href={href}
+      class:list={[
+        "inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-[var(--border-radius-full)] border w-fit transition-all duration-[var(--transition-fast)]",
+        variantStyles[variant],
+        className,
+      ]}
+    >
+      <slot />
+    </a>
+  ) : (
+    <span
+      class:list={[
+        "inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-[var(--border-radius-full)] border w-fit",
+        variantStyles[variant],
+        className,
+      ]}
+    >
+      <slot />
+    </a>
+  )
+}

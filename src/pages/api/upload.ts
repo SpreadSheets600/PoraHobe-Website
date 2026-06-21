@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { logActivity } from '../../utils/db';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { FetchHttpHandler, streamCollector } from '@smithy/fetch-http-handler';
+import { FetchHttpHandler } from '@smithy/fetch-http-handler';
 import { env } from 'cloudflare:workers';
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -13,11 +13,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
 
-    const s3Endpoint = env.S3_ENDPOINT_URL || 'https://s3.eu-central-003.backblazeb2.com';
-    const s3SecretKey = env.S3_SECRET_ACCESS_KEY || 'K003lrhYvprO1GdP7KFOHHzFjubVkko';
-    const s3AccessKeyId = env.S3_ACCESS_KEY_ID || '0036c0456fc62aa0000000002';
-    const s3BucketName = env.S3_BUCKET_NAME || 'CityPulse';
-    const s3Region = env.S3_REGION_NAME || 'eu-central-003';
+    const s3Endpoint = env.S3_ENDPOINT_URL;
+    const s3SecretKey = env.S3_SECRET_ACCESS_KEY;
+    const s3AccessKeyId = env.S3_ACCESS_KEY_ID;
+    const s3BucketName = env.S3_BUCKET_NAME;
+    const s3Region = env.S3_REGION_NAME;
 
     if (!s3Endpoint || !s3SecretKey || !s3AccessKeyId || !s3BucketName) {
       return new Response(
@@ -37,27 +37,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
       );
     }
 
-    // Verify ownership of the note if it exists
     const note = await db
       .prepare('SELECT id, user_id FROM notes WHERE id = ?')
       .bind(noteId)
       .first<{ id: string; user_id: string }>();
 
     if (note && note.user_id !== user.id) {
-      return new Response(JSON.stringify({ error: 'Unauthorized note access' }), {
-        status: 403,
-      });
+      return new Response(JSON.stringify({ error: 'Unauthorized note access' }), { status: 403 });
     }
 
-    // Generate unique file path key (storing in D1 attachments as r2_key column)
     const attachmentId = crypto.randomUUID();
     const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const fileKey = `users/${user.id}/notes/${noteId}/${attachmentId}-${sanitizedFilename}`;
 
-    // Initialize S3 client with explicit browser-compatible request handler
     const s3 = new S3Client({
       requestHandler: new FetchHttpHandler(),
-      streamCollector,
       endpoint: s3Endpoint,
       region: s3Region,
       credentials: {
@@ -69,7 +63,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
     const fileBuffer = await file.arrayBuffer();
 
-    // Upload object to B2/S3
     const command = new PutObjectCommand({
       Bucket: s3BucketName,
       Key: fileKey,
@@ -78,39 +71,21 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
 
     await s3.send(command);
-
     const now = Date.now();
 
-    // Insert attachment metadata in D1 (reusing the r2_key column name)
     await db
-      .prepare(
-        'INSERT INTO attachments (id, note_id, filename, r2_key, file_size, mime_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      )
+      .prepare('INSERT INTO attachments (id, note_id, filename, r2_key, file_size, mime_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .bind(attachmentId, noteId, file.name, fileKey, file.size, file.type, now)
       .run();
 
-    await logActivity(
-      db,
-      user.id,
-      'upload_file',
-      `Uploaded file "${file.name}" to note`
-    );
+    await logActivity(db, user.id, 'upload_file', `Uploaded file "${file.name}" to note`);
 
     return new Response(
       JSON.stringify({
         success: true,
-        attachment: {
-          id: attachmentId,
-          filename: file.name,
-          file_size: file.size,
-          mime_type: file.type,
-          created_at: now,
-        },
+        attachment: { id: attachmentId, filename: file.name, file_size: file.size, mime_type: file.type, created_at: now },
       }),
-      {
-        status: 201,
-        headers: { 'Content-Type': 'application/json' },
-      }
+      { status: 201, headers: { 'Content-Type': 'application/json' } }
     );
   } catch (error: any) {
     console.error('File Upload Error:', error);

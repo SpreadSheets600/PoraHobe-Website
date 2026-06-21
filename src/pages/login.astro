@@ -1,330 +1,131 @@
 ---
-import Layout from '../layouts/Layout.astro';
+import AuthLayout from '../layouts/AuthLayout.astro';
 import { env } from 'cloudflare:workers';
+import BentoCard from '../components/BentoCard.astro';
 
-// Check if invite-only mode is active
 const inviteOnly = env.INVITE_ONLY === 'true';
-
-// Cloudflare Turnstile Site Key (falls back to the standard Cloudflare test key for local development)
 const turnstileSiteKey = env.TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
 ---
 
-<Layout title="Login - PoraHobe">
-  <div class="auth-wrapper">
-    <div class="auth-card bento-card animate-fade-in">
-      <div class="auth-header">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+<AuthLayout title="Login - PoraHobe">
+  <div class="min-h-screen w-full flex items-center justify-center bg-[radial-gradient(circle_at_center,var(--bg-secondary)_0%,var(--bg-primary)_100%)] p-5">
+    <BentoCard class="w-[400px] max-w-full text-center flex flex-col gap-6 shadow-[var(--shadow-lg),var(--shadow-glow)]">
+      <div>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto mb-2 text-[var(--accent-primary)]">
           <path d="m16 6 4 14H4L8 6z"></path>
           <path d="M12 2v4"></path>
         </svg>
-        <h1>PoraHobe</h1>
-        <p>Private Notes & Study Material Platform</p>
+        <h1 class="text-[1.75rem] font-bold tracking-tight">PoraHobe</h1>
+        <p class="text-sm text-[var(--text-muted)]">Private Notes & Study Material Platform</p>
       </div>
 
-      <!-- Auth Tab Triggers -->
-      <div class="tab-triggers">
-        <button class="tab-trigger active" id="tab-login-btn">Login</button>
-        <button class="tab-trigger" id="tab-register-btn">Register</button>
+      <div class="flex bg-[var(--bg-tertiary)] p-1 rounded-[var(--border-radius-md)] border border-[var(--card-border)]">
+        <button class="tab-trigger flex-1 py-2 rounded-lg font-semibold text-sm cursor-pointer text-[var(--text-secondary)] transition-all duration-[var(--transition-fast)] bg-[var(--card-bg)] text-[var(--text-primary)] shadow-[var(--shadow-sm)]" id="tab-login-btn">Login</button>
+        <button class="tab-trigger flex-1 py-2 rounded-lg font-semibold text-sm cursor-pointer text-[var(--text-secondary)] transition-all duration-[var(--transition-fast)]" id="tab-register-btn">Register</button>
       </div>
 
-      <!-- Form Container -->
-      <div class="form-container">
-        <!-- Login Form -->
-        <form id="login-form" class="auth-form">
-          <div class="form-group">
-            <label for="login-username">Username</label>
-            <input type="text" id="login-username" name="username" placeholder="e.g., student" required />
+      <div class="flex flex-col gap-4">
+        <form id="login-form" class="flex flex-col gap-4 text-left">
+          <div class="flex flex-col gap-1.5">
+            <label for="login-username" class="text-sm font-medium text-[var(--text-secondary)]">Username</label>
+            <input type="text" id="login-username" name="username" placeholder="e.g., student" required class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-primary)] focus:shadow-[0_0_0_3px_var(--accent-glow)]" />
           </div>
-          
-          <div class="form-group">
-            <label for="login-password">Password</label>
-            <input type="password" id="login-password" name="password" placeholder="••••••••" required />
+          <div class="flex flex-col gap-1.5">
+            <label for="login-password" class="text-sm font-medium text-[var(--text-secondary)]">Password</label>
+            <input type="password" id="login-password" name="password" placeholder="••••••••" required class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-primary)] focus:shadow-[0_0_0_3px_var(--accent-glow)]" />
           </div>
-
-          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+          <button type="submit" class="w-full inline-flex items-center justify-center gap-2 px-[18px] py-3 rounded-[var(--border-radius-md)] font-semibold text-sm cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)] hover:-translate-y-px">Sign In</button>
         </form>
 
-        <!-- Register Form -->
-        <form id="register-form" class="auth-form hidden">
-          <div class="form-group">
-            <label for="register-username">Username</label>
-            <input type="text" id="register-username" name="username" placeholder="Min. 3 characters" required />
+        <form id="register-form" class="flex flex-col gap-4 text-left hidden">
+          <div class="flex flex-col gap-1.5">
+            <label for="register-username" class="text-sm font-medium text-[var(--text-secondary)]">Username</label>
+            <input type="text" id="register-username" name="username" placeholder="Min. 3 characters" required class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-primary)] focus:shadow-[0_0_0_3px_var(--accent-glow)]" />
           </div>
-          
-          <div class="form-group">
-            <label for="register-password">Password</label>
-            <input type="password" id="register-password" name="password" placeholder="Min. 6 characters" required />
+          <div class="flex flex-col gap-1.5">
+            <label for="register-password" class="text-sm font-medium text-[var(--text-secondary)]">Password</label>
+            <input type="password" id="register-password" name="password" placeholder="Min. 6 characters" required class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-primary)] focus:shadow-[0_0_0_3px_var(--accent-glow)]" />
           </div>
-
           {inviteOnly && (
-            <div class="form-group">
-              <label for="register-invite">Invite Code</label>
-              <input type="text" id="register-invite" name="inviteCode" placeholder="Enter private invite code" required />
+            <div class="flex flex-col gap-1.5">
+              <label for="register-invite" class="text-sm font-medium text-[var(--text-secondary)]">Invite Code</label>
+              <input type="text" id="register-invite" name="inviteCode" placeholder="Enter private invite code" required class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-primary)] focus:shadow-[0_0_0_3px_var(--accent-glow)]" />
             </div>
           )}
-
-          <!-- Turnstile Protection -->
-          <div class="turnstile-wrapper">
+          <div class="flex justify-center my-2">
             <div class="cf-turnstile" data-sitekey={turnstileSiteKey} data-theme="dark"></div>
           </div>
-
-          <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+          <button type="submit" class="w-full inline-flex items-center justify-center gap-2 px-[18px] py-3 rounded-[var(--border-radius-md)] font-semibold text-sm cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)] hover:-translate-y-px">Create Account</button>
         </form>
       </div>
 
-      <!-- Feedback messages -->
-      <div id="error-message" class="alert alert-danger hidden"></div>
-      <div id="success-message" class="alert alert-success hidden"></div>
-    </div>
+      <div id="error-message" class="hidden text-left px-3 py-3 rounded-[var(--border-radius-md)] text-sm bg-[hsla(347,77%,50%,0.15)] border border-[hsla(347,77%,50%,0.3)] text-[var(--danger)]"></div>
+      <div id="success-message" class="hidden text-left px-3 py-3 rounded-[var(--border-radius-md)] text-sm bg-[hsla(142,76%,36%,0.15)] border border-[hsla(142,76%,36%,0.3)] text-[var(--success)]"></div>
+    </BentoCard>
   </div>
 
-  <!-- Turnstile script -->
-  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
-
   <style>
-    .auth-wrapper {
-      min-height: 100vh;
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: radial-gradient(circle at center, var(--bg-secondary) 0%, var(--bg-primary) 100%);
-      padding: 20px;
-    }
-
-    .auth-card {
-      width: 400px;
-      max-width: 100%;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      box-shadow: var(--shadow-lg), var(--shadow-glow);
-    }
-
-    .auth-header svg {
-      color: var(--accent-primary);
-      margin-bottom: 8px;
-    }
-
-    .auth-header h1 {
-      font-size: 1.75rem;
-      font-weight: 700;
-      letter-spacing: -0.03em;
-    }
-
-    .auth-header p {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-    }
-
-    .tab-triggers {
-      display: flex;
-      background: var(--bg-tertiary);
-      padding: 4px;
-      border-radius: var(--border-radius-md);
-      border: 1px solid var(--card-border);
-    }
-
-    .tab-trigger {
-      flex: 1;
-      padding: 8px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 0.9rem;
-      cursor: pointer;
-      color: var(--text-secondary);
-      transition: background var(--transition-fast), color var(--transition-fast);
-    }
-
-    .tab-trigger.active {
+    .tab-active {
       background: var(--card-bg);
       color: var(--text-primary);
       box-shadow: var(--shadow-sm);
     }
-
-    .auth-form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      text-align: left;
-    }
-
-    .auth-form.hidden {
-      display: none;
-    }
-
-    .form-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .form-group label {
-      font-size: 0.85rem;
-      font-weight: 500;
-      color: var(--text-secondary);
-    }
-
-    .form-group input {
-      background: var(--bg-secondary);
-      border: 1px solid var(--card-border);
-      border-radius: var(--border-radius-md);
-      padding: 10px 14px;
-      font-size: 0.95rem;
-      color: var(--text-primary);
-      transition: border var(--transition-fast);
-    }
-
-    .form-group input:focus {
-      border-color: var(--accent-primary);
-    }
-
-    .btn-block {
-      width: 100%;
-      justify-content: center;
-      padding: 12px;
-    }
-
-    .turnstile-wrapper {
-      display: flex;
-      justify-content: center;
-      margin: 8px 0;
-    }
-
-    .alert {
-      padding: 12px;
-      border-radius: var(--border-radius-md);
-      font-size: 0.85rem;
-      text-align: left;
-    }
-
-    .alert-danger {
-      background: hsla(347, 77%, 50%, 0.15);
-      border: 1px solid hsla(347, 77%, 50%, 0.3);
-      color: var(--danger);
-    }
-
-    .alert-success {
-      background: hsla(142, 76%, 36%, 0.15);
-      border: 1px solid hsla(142, 76%, 36%, 0.3);
-      color: var(--success);
-    }
-
-    .alert.hidden {
-      display: none;
-    }
   </style>
 
+  <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
   <script>
-    // Tab switching logic
     const tabLoginBtn = document.getElementById('tab-login-btn');
     const tabRegisterBtn = document.getElementById('tab-register-btn');
     const loginForm = document.getElementById('login-form');
     const registerForm = document.getElementById('register-form');
-    
     const errorAlert = document.getElementById('error-message');
     const successAlert = document.getElementById('success-message');
 
-    const clearAlerts = () => {
-      errorAlert?.classList.add('hidden');
-      successAlert?.classList.add('hidden');
+    const clearAlerts = () => { errorAlert?.classList.add('hidden'); successAlert?.classList.add('hidden'); };
+    const showError = (msg) => { errorAlert!.textContent = msg; errorAlert?.classList.remove('hidden'); };
+    const showSuccess = (msg) => { successAlert!.textContent = msg; successAlert?.classList.remove('hidden'); };
+
+    const setActiveTab = (active: HTMLElement, inactive: HTMLElement, show: HTMLElement, hide: HTMLElement) => {
+      active.classList.add('tab-active');
+      inactive.classList.remove('tab-active');
+      show.classList.remove('hidden'); hide.classList.add('hidden');
+      clearAlerts();
     };
 
-    tabLoginBtn?.addEventListener('click', () => {
-      tabLoginBtn.classList.add('active');
-      tabRegisterBtn?.classList.remove('active');
-      loginForm?.classList.remove('hidden');
-      registerForm?.classList.add('hidden');
-      clearAlerts();
-    });
+    tabLoginBtn?.addEventListener('click', () => setActiveTab(tabLoginBtn, tabRegisterBtn!, loginForm!, registerForm!));
+    tabRegisterBtn?.addEventListener('click', () => setActiveTab(tabRegisterBtn, tabLoginBtn!, registerForm!, loginForm!));
 
-    tabRegisterBtn?.addEventListener('click', () => {
-      tabRegisterBtn.classList.add('active');
-      tabLoginBtn?.classList.remove('active');
-      registerForm?.classList.remove('hidden');
-      loginForm?.classList.add('hidden');
-      clearAlerts();
-    });
-
-    // Form Submission: Login
     loginForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      clearAlerts();
-
-      const usernameInput = document.getElementById('login-username') as HTMLInputElement;
-      const passwordInput = document.getElementById('login-password') as HTMLInputElement;
-
+      e.preventDefault(); clearAlerts();
+      const username = (document.getElementById('login-username') as HTMLInputElement).value;
+      const password = (document.getElementById('login-password') as HTMLInputElement).value;
       try {
         const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: usernameInput.value,
-            password: passwordInput.value,
-          }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
         });
-
         const data = await res.json();
-
-        if (res.ok) {
-          successAlert!.textContent = 'Signed in successfully! Redirecting...';
-          successAlert?.classList.remove('hidden');
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 1000);
-        } else {
-          errorAlert!.textContent = data.error || 'Authentication failed';
-          errorAlert?.classList.remove('hidden');
-        }
-      } catch (err) {
-        console.error(err);
-        errorAlert!.textContent = 'An error occurred during sign in.';
-        errorAlert?.classList.remove('hidden');
-      }
+        if (res.ok) { showSuccess('Signed in successfully! Redirecting...'); setTimeout(() => window.location.href = '/', 1000); }
+        else showError(data.error || 'Authentication failed');
+      } catch { showError('An error occurred during sign in.'); }
     });
 
-    // Form Submission: Register
     registerForm?.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      clearAlerts();
-
-      const usernameInput = document.getElementById('register-username') as HTMLInputElement;
-      const passwordInput = document.getElementById('register-password') as HTMLInputElement;
+      e.preventDefault(); clearAlerts();
+      const username = (document.getElementById('register-username') as HTMLInputElement).value;
+      const password = (document.getElementById('register-password') as HTMLInputElement).value;
       const inviteInput = document.getElementById('register-invite') as HTMLInputElement;
-      
-      // Get Turnstile token
       const turnstileResponse = (registerForm.querySelector('[name="cf-turnstile-response"]') as HTMLInputElement)?.value;
-
       try {
         const res = await fetch('/api/auth/register', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: usernameInput.value,
-            password: passwordInput.value,
-            inviteCode: inviteInput?.value || undefined,
-            turnstileToken: turnstileResponse || undefined,
-          }),
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password, inviteCode: inviteInput?.value || undefined, turnstileToken: turnstileResponse || undefined }),
         });
-
         const data = await res.json();
-
-        if (res.ok) {
-          successAlert!.textContent = 'Account created successfully! Redirecting...';
-          successAlert?.classList.remove('hidden');
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 1000);
-        } else {
-          errorAlert!.textContent = data.error || 'Registration failed';
-          errorAlert?.classList.remove('hidden');
-        }
-      } catch (err) {
-        console.error(err);
-        errorAlert!.textContent = 'An error occurred during registration.';
-        errorAlert?.classList.remove('hidden');
-      }
+        if (res.ok) { showSuccess('Account created successfully! Redirecting...'); setTimeout(() => window.location.href = '/', 1000); }
+        else showError(data.error || 'Registration failed');
+      } catch { showError('An error occurred during registration.'); }
     });
   </script>
-</Layout>
+  </AuthLayout>

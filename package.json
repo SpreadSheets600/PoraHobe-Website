@@ -20,6 +20,8 @@
     "marked": "^18.0.5"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260620.1"
+    "@cloudflare/workers-types": "^4.20260620.1",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.1"
   }
 }

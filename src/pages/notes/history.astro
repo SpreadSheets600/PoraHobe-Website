@@ -2,132 +2,96 @@
 import Layout from '../../layouts/Layout.astro';
 import type { LinkItem } from '../../utils/db';
 import { env } from 'cloudflare:workers';
+import BentoCard from '../../components/BentoCard.astro';
+import Icon from '../../components/Icon.astro';
 
 const user = Astro.locals.user;
 const db = env.DB;
 
-if (!user || !db) {
-  return Astro.redirect('/login');
-}
+if (!user || !db) return Astro.redirect('/login');
 
 let watchProgressVideos: (LinkItem & { note_title: string })[] = [];
 try {
   const { results } = await db
-    .prepare(
-      `SELECT l.*, n.title as note_title 
-       FROM links l 
-       JOIN notes n ON l.note_id = n.id 
-       WHERE n.user_id = ? AND l.type = 'youtube' AND l.watch_progress > 0 
-       ORDER BY l.created_at DESC`
-    )
+    .prepare(`SELECT l.*, n.title as note_title FROM links l JOIN notes n ON l.note_id = n.id WHERE n.user_id = ? AND l.type = 'youtube' AND l.watch_progress > 0 ORDER BY l.created_at DESC`)
     .bind(user.id)
     .all<LinkItem & { note_title: string }>();
   watchProgressVideos = results;
-} catch (e) {
-  console.error('Failed to load video history:', e);
-}
+} catch (e) { console.error('Failed to load video history:', e); }
 ---
 
 <Layout title="Watch History - PoraHobe">
-  <div class="history-wrapper animate-fade-in">
-    <div class="history-header">
-      <div class="header-left">
-        <a href="/" class="back-link">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m15 18-6-6 6-6"></path>
-          </svg>
+  <div class="max-w-[1200px] mx-auto p-6 flex flex-col gap-6 animate-[fadeIn_0.4s_cubic-bezier(0.16,1,0.3,1)_forwards]">
+    <div class="flex justify-between items-end gap-5 max-sm:flex-col max-sm:items-stretch">
+      <div>
+        <a href="/" class="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--text-muted)] no-underline mb-2 transition-colors duration-[var(--transition-fast)] hover:text-[var(--accent-primary)]">
+          <Icon name="arrow-left" size={16} />
           Back to Dashboard
         </a>
-        <h2>
-          <svg class="header-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 8v4l3 3"></path>
-            <circle cx="12" cy="12" r="10"></circle>
-          </svg>
+        <h2 class="flex items-center gap-2.5 text-[1.75rem] font-bold text-[var(--text-primary)] m-0">
+          <Icon name="clock" size={24} class="text-[var(--accent-primary)]" />
           Watch History
         </h2>
-        <p class="history-subtitle">{watchProgressVideos.length} video{watchProgressVideos.length === 1 ? '' : 's'} with watch progress</p>
+        <p class="mt-1 text-sm text-[var(--text-muted)]">{watchProgressVideos.length} video{watchProgressVideos.length === 1 ? '' : 's'} with watch progress</p>
       </div>
-
       {watchProgressVideos.length > 0 && (
-        <button id="clear-all-btn" class="btn btn-danger-outline">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2M10 11v6M14 11v6"></path>
-          </svg>
+        <button id="clear-all-btn" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-[var(--border-radius-md)] font-medium text-sm cursor-pointer border transition-all duration-[var(--transition-fast)] bg-transparent border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]">
+          <Icon name="trash" size={16} />
           Clear All History
         </button>
       )}
     </div>
 
-    <!-- Search filter bar -->
     {watchProgressVideos.length > 0 && (
-      <div class="search-bar-container bento-card">
-        <div class="search-input-wrapper">
-          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"></circle>
-            <path d="m21 21-4.3-4.3"></path>
-          </svg>
-          <input type="text" id="history-search" placeholder="Search videos by title or note..." />
+      <BentoCard class="!p-4">
+        <div class="relative flex items-center">
+          <Icon name="search" size={18} class="absolute left-3.5 text-[var(--text-muted)] pointer-events-none" />
+          <input type="text" id="history-search" placeholder="Search videos by title or note..." class="w-full py-3 pl-[42px] pr-4 bg-[var(--bg-primary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] text-sm text-[var(--text-primary)] outline-none transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:shadow-[0_0_0_2px_rgba(139,92,246,0.15)]" />
         </div>
-      </div>
+      </BentoCard>
     )}
 
     {watchProgressVideos.length === 0 ? (
-      <div class="empty-state bento-card">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon">
-          <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.934a.5.5 0 0 0-.777-.416L16 11Z"></path>
-          <rect width="14" height="12" x="2" y="6" rx="2" ry="2"></rect>
-        </svg>
-        <h3>No watch history found</h3>
-        <p>Start watching embedded YouTube videos inside your study notes to track progress automatically.</p>
-        <a href="/notes" class="btn btn-primary mt-12">Browse Study Materials</a>
-      </div>
+      <BentoCard class="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Icon name="video" size={48} class="text-[var(--text-muted)] opacity-60" />
+        <h3 class="text-lg font-semibold text-[var(--text-primary)]">No watch history found</h3>
+        <p class="text-sm text-[var(--text-muted)] max-w-[400px]">Start watching embedded YouTube videos inside your study notes to track progress automatically.</p>
+        <a href="/notes" class="inline-flex items-center justify-center gap-2 px-[18px] py-2.5 rounded-[var(--border-radius-md)] font-semibold text-sm cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)] hover:-translate-y-px mt-3">Browse Study Materials</a>
+      </BentoCard>
     ) : (
-      <div class="history-grid" id="history-grid">
+      <div id="history-grid" class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-5">
         {watchProgressVideos.map((video) => {
           const mins = Math.floor(video.watch_progress / 60);
           const secs = video.watch_progress % 60;
-          const formattedProgress = `${mins}m ${secs}s`;
-
           return (
-            <div class="history-card bento-card interactive" data-title={video.title?.toLowerCase() || ''} data-note={video.note_title?.toLowerCase() || ''}>
-              <div class="video-preview-wrapper">
+            <div class="history-card flex flex-col overflow-hidden border border-[var(--card-border)] rounded-[var(--border-radius-lg)] bg-[var(--card-bg)] backdrop-blur-[16px] shadow-[var(--shadow-sm)] transition-all duration-[var(--transition-normal)] hover:-translate-y-1 hover:shadow-[var(--shadow-md)] hover:border-[var(--accent-primary)]" data-title={video.title?.toLowerCase() || ''} data-note={video.note_title?.toLowerCase() || ''}>
+              <div class="relative aspect-video w-full bg-[var(--bg-tertiary)] overflow-hidden">
                 {video.thumbnail_url ? (
-                  <img src={video.thumbnail_url} alt={video.title || 'YouTube Video'} loading="lazy" />
+                  <img src={video.thumbnail_url} alt={video.title || 'YouTube Video'} loading="lazy" class="w-full h-full object-cover transition-transform duration-[var(--transition-normal)] group-hover:scale-105" />
                 ) : (
-                  <div class="thumb-fallback">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="6 3 20 12 6 21 6 3"></polygon>
-                    </svg>
+                  <div class="w-full h-full flex items-center justify-center text-[var(--text-muted)] bg-gradient-to-br from-[var(--bg-secondary)] to-[var(--bg-tertiary)]">
+                    <Icon name="video" size={32} />
                   </div>
                 )}
-                <div class="duration-badge">{formattedProgress} watched</div>
-                <a href={`/notes/${video.note_id}`} class="play-overlay" title="Resume Watching">
-                  <div class="play-button-icon">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="6 3 20 12 6 21 6 3"></polygon>
-                    </svg>
+                <div class="absolute bottom-2 right-2 bg-black/75 backdrop-blur-[4px] text-white text-xs font-semibold px-2 py-1 rounded-[var(--border-radius-sm)] z-2">{mins}m {secs}s watched</div>
+                <a href={`/notes/${video.note_id}`} class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 transition-opacity duration-[var(--transition-fast)] z-1 hover:opacity-100" title="Resume Watching">
+                  <div class="w-12 h-12 rounded-full bg-[var(--accent-primary)] text-white flex items-center justify-center scale-90 transition-all duration-[var(--transition-fast)] hover:scale-100 hover:bg-[var(--accent-hover)]">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="none" class="ml-0.5"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
                   </div>
                 </a>
               </div>
-              <div class="history-info">
-                <a href={`/notes/${video.note_id}`} class="video-link-title">
-                  <h4>{video.title || 'YouTube Video'}</h4>
+              <div class="p-4 flex flex-col gap-3 flex-1">
+                <a href={`/notes/${video.note_id}`} class="no-underline text-[var(--text-primary)]">
+                  <h4 class="m-0 text-sm font-semibold leading-relaxed line-clamp-2 transition-colors duration-[var(--transition-fast)] hover:text-[var(--accent-primary)]">{video.title || 'YouTube Video'}</h4>
                 </a>
-                <div class="video-note-link">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="note-link-icon">
-                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
-                    <polyline points="14 2 14 8 20 8"></polyline>
-                  </svg>
+                <div class="flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                  <Icon name="file" size={14} class="shrink-0" />
                   <span>Note: {video.note_title}</span>
                 </div>
-                <div class="history-actions-row">
-                  <a href={`/notes/${video.note_id}`} class="btn btn-primary btn-sm">
-                    Resume
-                  </a>
-                  <button class="btn btn-danger-outline btn-sm delete-single-btn" data-link-id={video.id} title="Remove from history">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                    </svg>
+                <div class="flex justify-between items-center gap-2 mt-auto pt-1">
+                  <a href={`/notes/${video.note_id}`} class="flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-medium text-xs cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)]">Resume</a>
+                  <button class="delete-single-btn flex-1 inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-medium text-xs cursor-pointer border transition-all duration-[var(--transition-fast)] bg-transparent border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white" data-link-id={video.id} title="Remove from history">
+                    <Icon name="trash" size={14} />
                     Remove
                   </button>
                 </div>
@@ -138,407 +102,50 @@ try {
       </div>
     )}
   </div>
-</Layout>
 
-<style>
-  .history-wrapper {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-
-  .history-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    gap: 20px;
-  }
-
-  .back-link {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    text-decoration: none;
-    margin-bottom: 8px;
-    transition: color var(--transition-fast);
-  }
-
-  .back-link:hover {
-    color: var(--accent-primary);
-  }
-
-  .history-header h2 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin: 0;
-  }
-
-  .header-icon {
-    color: var(--accent-primary);
-  }
-
-  .history-subtitle {
-    margin-top: 4px;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    padding: 10px 16px;
-    border-radius: var(--border-radius-md);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    border: 1px solid transparent;
-    text-decoration: none;
-  }
-
-  .btn-sm {
-    padding: 6px 12px;
-    font-size: 0.8rem;
-  }
-
-  .btn-primary {
-    background: var(--accent-primary);
-    color: white;
-  }
-
-  .btn-primary:hover {
-    background: var(--accent-hover);
-    box-shadow: 0 0 12px rgba(139, 92, 246, 0.4);
-  }
-
-  .btn-danger-outline {
-    background: transparent;
-    color: var(--danger);
-    border-color: var(--danger);
-  }
-
-  .btn-danger-outline:hover {
-    background: var(--danger);
-    color: white;
-    box-shadow: 0 0 12px rgba(239, 68, 68, 0.2);
-  }
-
-  .search-bar-container {
-    padding: 16px;
-  }
-
-  .search-input-wrapper {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  .search-icon {
-    position: absolute;
-    left: 14px;
-    color: var(--text-muted);
-    pointer-events: none;
-  }
-
-  .search-input-wrapper input {
-    width: 100%;
-    padding: 12px 16px 12px 42px;
-    background: var(--bg-primary);
-    border: 1px solid var(--card-border);
-    border-radius: var(--border-radius-md);
-    color: var(--text-primary);
-    font-size: 0.95rem;
-    outline: none;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-  }
-
-  .search-input-wrapper input:focus {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.15);
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 64px 32px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-  }
-
-  .empty-icon {
-    color: var(--text-muted);
-    opacity: 0.6;
-  }
-
-  .empty-state h3 {
-    font-size: 1.3rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin: 0;
-  }
-
-  .empty-state p {
-    color: var(--text-muted);
-    max-width: 400px;
-    margin: 0;
-    font-size: 0.95rem;
-    line-height: 1.5;
-  }
-
-  .mt-12 {
-    margin-top: 12px;
-  }
-
-  .history-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 20px;
-  }
-
-  .history-card {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding: 0;
-    border: 1px solid var(--card-border);
-    transition: transform var(--transition-normal), box-shadow var(--transition-normal);
-  }
-
-  .history-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--accent-primary);
-  }
-
-  .video-preview-wrapper {
-    position: relative;
-    aspect-ratio: 16 / 9;
-    width: 100%;
-    background: var(--bg-tertiary);
-    overflow: hidden;
-  }
-
-  .video-preview-wrapper img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform var(--transition-normal);
-  }
-
-  .history-card:hover .video-preview-wrapper img {
-    transform: scale(1.05);
-  }
-
-  .thumb-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
-  }
-
-  .duration-badge {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(4px);
-    color: white;
-    font-size: 0.75rem;
-    font-weight: 600;
-    padding: 4px 8px;
-    border-radius: var(--border-radius-sm);
-    z-index: 2;
-  }
-
-  .play-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.4);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-    z-index: 1;
-  }
-
-  .history-card:hover .play-overlay {
-    opacity: 1;
-  }
-
-  .play-button-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--accent-primary);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transform: scale(0.9);
-    transition: transform var(--transition-fast), background var(--transition-fast);
-  }
-
-  .play-overlay:hover .play-button-icon {
-    transform: scale(1);
-    background: var(--accent-hover);
-  }
-
-  .play-button-icon svg {
-    margin-left: 3px;
-    fill: currentColor;
-  }
-
-  .history-info {
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    flex-grow: 1;
-  }
-
-  .video-link-title {
-    text-decoration: none;
-    color: var(--text-primary);
-  }
-
-  .video-link-title h4 {
-    margin: 0;
-    font-size: 0.95rem;
-    font-weight: 600;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    transition: color var(--transition-fast);
-  }
-
-  .video-link-title:hover h4 {
-    color: var(--accent-primary);
-  }
-
-  .video-note-link {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .note-link-icon {
-    flex-shrink: 0;
-  }
-
-  .history-actions-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    margin-top: auto;
-    padding-top: 4px;
-  }
-
-  .history-actions-row .btn {
-    flex: 1;
-  }
-
-  @media (max-width: 640px) {
-    .history-header {
-      flex-direction: column;
-      align-items: stretch;
+  <script>
+    const searchInput = document.getElementById('history-search') as HTMLInputElement;
+    const cards = document.querySelectorAll('.history-card');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.toLowerCase().trim();
+        cards.forEach((card) => {
+          const title = card.getAttribute('data-title') || '';
+          const note = card.getAttribute('data-note') || '';
+          (card as HTMLElement).style.display = (title.includes(q) || note.includes(q)) ? '' : 'none';
+        });
+      });
     }
-  }
-</style>
 
-<script>
-  // Search history filter
-  const searchInput = document.getElementById('history-search') as HTMLInputElement;
-  const cards = document.querySelectorAll('.history-card');
+    const clearAllBtn = document.getElementById('clear-all-btn');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', async () => {
+        if (confirm('Are you sure you want to clear all your watch progress history?')) {
+          try {
+            const res = await fetch('/api/progress', { method: 'DELETE' });
+            if (res.ok) window.location.reload();
+            else alert('Failed to clear history');
+          } catch { alert('An error occurred'); }
+        }
+      });
+    }
 
-  if (searchInput) {
-    searchInput.addEventListener('input', () => {
-      const q = searchInput.value.toLowerCase().trim();
-      cards.forEach((card) => {
-        const title = card.getAttribute('data-title') || '';
-        const note = card.getAttribute('data-note') || '';
-        if (title.includes(q) || note.includes(q)) {
-          (card as HTMLElement).style.display = '';
-        } else {
-          (card as HTMLElement).style.display = 'none';
+    document.querySelectorAll('.delete-single-btn').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const linkId = btn.getAttribute('data-link-id');
+        if (!linkId) return;
+        if (confirm('Remove this video from your watch history?')) {
+          try {
+            const res = await fetch('/api/progress', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ linkId, progress: 0 }),
+            });
+            if (res.ok) window.location.reload();
+            else alert('Failed to remove item');
+          } catch { alert('An error occurred'); }
         }
       });
     });
-  }
-
-  // Clear all history
-  const clearAllBtn = document.getElementById('clear-all-btn');
-  if (clearAllBtn) {
-    clearAllBtn.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to clear all your watch progress history?')) {
-        try {
-          const res = await fetch('/api/progress', {
-            method: 'DELETE',
-          });
-          if (res.ok) {
-            window.location.reload();
-          } else {
-            alert('Failed to clear history');
-          }
-        } catch (e) {
-          console.error(e);
-          alert('An error occurred');
-        }
-      }
-    });
-  }
-
-  // Delete single history item
-  const deleteSingleBtns = document.querySelectorAll('.delete-single-btn');
-  deleteSingleBtns.forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const linkId = btn.getAttribute('data-link-id');
-      if (!linkId) return;
-
-      if (confirm('Remove this video from your watch history?')) {
-        try {
-          const res = await fetch('/api/progress', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ linkId, progress: 0 }),
-          });
-          if (res.ok) {
-            window.location.reload();
-          } else {
-            alert('Failed to remove item');
-          }
-        } catch (err) {
-          console.error(err);
-          alert('An error occurred');
-        }
-      }
-    });
-  });
-</script>
+  </script>
+</Layout>

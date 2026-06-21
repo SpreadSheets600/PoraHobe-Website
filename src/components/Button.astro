@@ -1,0 +1,44 @@
+---
+interface Props {
+  variant?: "primary" | "secondary" | "danger" | "ghost";
+  size?: "sm" | "md";
+  href?: string;
+  class?: string;
+  type?: string;
+  disabled?: boolean;
+  id?: string;
+  title?: string;
+}
+
+const { variant = "secondary", size = "md", href, class: className, type, disabled, id, title } = Astro.props;
+
+const base = "inline-flex items-center justify-center gap-2 font-semibold cursor-pointer border border-transparent transition-all duration-[var(--transition-fast)] no-underline";
+const sizeStyles = size === "sm" ? "px-3 py-1.5 text-xs rounded-[var(--border-radius-md)]" : "px-[18px] py-2.5 text-sm rounded-[var(--border-radius-md)]";
+
+const variants: Record<string, string> = {
+  primary: "bg-[var(--accent-primary)] text-white shadow-[0_2px_8px_rgba(139,92,246,0.2)] hover:bg-[var(--accent-hover)] hover:shadow-[0_4px_12px_rgba(139,92,246,0.35)] hover:-translate-y-px active:translate-y-0",
+  secondary: "bg-[var(--bg-secondary)] border-[var(--card-border)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)] hover:-translate-y-px active:translate-y-0",
+  danger: "bg-transparent border-[var(--danger)] text-[var(--danger)] hover:bg-[var(--danger)] hover:text-white hover:shadow-[0_4px_12px_rgba(239,68,68,0.2)] hover:-translate-y-px",
+  ghost: "bg-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]",
+};
+
+const disabledStyles = "opacity-50 pointer-events-none";
+---
+
+{
+  href ? (
+    <a href={href} class:list={[base, sizeStyles, variants[variant], disabled && disabledStyles, className]}>
+      <slot />
+    </a>
+  ) : (
+    <button
+      class:list={[base, sizeStyles, variants[variant], disabled && disabledStyles, className]}
+      {type}
+      {disabled}
+      {id}
+      {title}
+    >
+      <slot />
+    </button>
+  )
+}
