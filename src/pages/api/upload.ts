@@ -29,7 +29,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
       .bind(noteId)
       .first<{ id: string; user_id: string }>();
 
-    if (note && note.user_id !== user.id) {
+    if (!note) {
+      return new Response(JSON.stringify({ error: 'Note not found' }), { status: 404 });
+    }
+
+    if (note.user_id !== user.id) {
       return new Response(JSON.stringify({ error: 'Unauthorized note access' }), { status: 403 });
     }
 

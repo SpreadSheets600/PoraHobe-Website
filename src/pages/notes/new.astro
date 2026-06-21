@@ -167,6 +167,7 @@ try {
     let uploadedFileId = null;
     let uploadedFilenameText = '';
     let uploadedFileMime = '';
+    let pendingFile = null;
     const generatedNoteId = crypto.randomUUID();
 
     const tabFileBtn = document.getElementById('tab-file-btn');
@@ -261,36 +262,17 @@ try {
         const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
         materialTitle.value = cleanName.replace(/[-_]/g, ' ');
       }
+      pendingFile = file;
       uploadDropzone.classList.add('hidden');
       if (uploadProgressCard) uploadProgressCard.style.display = 'flex';
       uploadedFilenameEl.textContent = file.name;
       uploadedFilesizeEl.textContent = formatBytes(file.size);
-      setProgress(3);
-
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('noteId', generatedNoteId);
-
-      try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/upload', true);
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.min(95, Math.round((e.loaded / e.total) * 95))); };
-        xhr.onload = () => {
-          if (xhr.status === 201) {
-            const data = JSON.parse(xhr.responseText);
-            uploadedFileId = data.attachment.id;
-            uploadedFilenameText = data.attachment.filename;
-            uploadedFileMime = data.attachment.mime_type;
-            setProgress(100, true);
-          } else { try { const data = JSON.parse(xhr.responseText); alert(`Upload failed: ${data.error}`); } catch { alert('Upload failed.'); } resetUploadZone(); }
-        };
-        xhr.onerror = () => { alert('Upload failed due to a connection error.'); resetUploadZone(); };
-        xhr.send(formData);
-      } catch (err) { console.error(err); resetUploadZone(); }
+      setProgress(0, false);
+      if (uploadStatusPercent) uploadStatusPercent.textContent = 'Ready to upload after saving';
     };
 
     const resetUploadZone = () => {
-      uploadedFileId = null; uploadedFilenameText = ''; uploadedFileMime = '';
+      uploadedFileId = null; uploadedFilenameText = ''; uploadedFileMime = ''; pendingFile = null;
       if (uploadProgressFill) { uploadProgressFill.style.width = '0'; uploadProgressFill.style.backgroundColor = ''; }
       if (uploadStatusPercent) uploadStatusPercent.style.color = '';
       if (uploadProgressCard) uploadProgressCard.style.display = 'none';
@@ -340,8 +322,19 @@ try {
           body: JSON.stringify({ id: generatedNoteId, title, content: noteBody, collection_id: collectionId, category: category || 'general', semester: semester || 'All', topic: topic || 'General', is_favorite: isFavorite, is_pinned: isPinned, tags }),
         });
         const data = await res.json();
-        if (res.ok) window.location.href = `/notes/${generatedNoteId}`;
-        else { alert(data.error || 'Failed to share material'); saveMaterialBtn.removeAttribute('disabled'); saveMaterialBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Share Resource</span>'; }
+        if (res.ok) {
+          if (pendingFile) {
+            saveMaterialBtn.innerHTML = '<span>Uploading file...</span>';
+            const formData = new FormData();
+            formData.append('file', pendingFile);
+            formData.append('noteId', generatedNoteId);
+            try {
+              const uploadRes = await fetch('/api/upload', { method: 'POST', body: formData });
+              if (!uploadRes.ok) { const errData = await uploadRes.json(); console.error('File upload failed:', errData.error); }
+            } catch (upErr) { console.error('File upload error:', upErr); }
+          }
+          window.location.href = `/notes/${generatedNoteId}`;
+        } else { alert(data.error || 'Failed to share material'); saveMaterialBtn.removeAttribute('disabled'); saveMaterialBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Share Resource</span>'; }
       } catch (err) { console.error(err); alert('An error occurred during submission.'); saveMaterialBtn.removeAttribute('disabled'); saveMaterialBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span>Share Resource</span>'; }
     });
   </script>
