@@ -1,5 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -14,6 +15,11 @@
   --radius-bento: 16px;
   --radius-card: 10px;
   --radius-sm: 6px;
+  /* Custom z-index scale extensions */
+  --z-1: 1;
+  --z-2: 2;
+  --z-100: 100;
+  --z-1000: 1000;
 }
 
 :root {
@@ -88,3 +94,15 @@ html, body {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+
+/* Custom utility classes for non-standard z-index values */
+.z-1 { z-index: 1; }
+.z-2 { z-index: 2; }
+.z-100 { z-index: 100; }
+.z-1000 { z-index: 1000; }
+
+/* Fix: hidden + flex/block conflict - when JS needs to toggle visibility */
+.hidden { display: none !important; }
+
+/* Prose theme overrides for dark mode */
+.dark .prose { --tw-prose-body: var(--text-secondary); --tw-prose-headings: var(--text-primary); --tw-prose-links: var(--accent-primary); --tw-prose-code: var(--text-primary); --tw-prose-pre-bg: var(--bg-secondary); --tw-prose-hr: var(--card-border); --tw-prose-quotes: var(--text-muted); --tw-prose-quote-borders: var(--accent-primary); --tw-prose-bullets: var(--text-muted); --tw-prose-counters: var(--text-muted); }
