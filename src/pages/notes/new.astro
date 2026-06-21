@@ -67,7 +67,7 @@ try {
             <input type="file" id="file-uploader-input" class="hidden" accept=".pdf,image/*" />
           </div>
 
-          <div id="upload-progress-card" class="hidden flex items-center gap-4 p-4 bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] relative">
+          <div id="upload-progress-card" class="items-center gap-4 p-4 bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] relative" style="display:none">
             <span class="shrink-0 text-[var(--accent-primary)] flex items-center"><Icon name="paperclip" size={22} /></span>
             <div class="flex-1 flex flex-col gap-1.5 min-w-0">
               <div class="flex justify-between items-center gap-2">
@@ -83,7 +83,7 @@ try {
           </div>
         </div>
 
-        <div id="url-share-container" class="w-full min-h-[160px] flex flex-col gap-4 hidden">
+        <div id="url-share-container" class="w-full min-h-[160px] flex-col gap-4" style="display:none">
           <div class="flex flex-col gap-1.5">
             <label for="material-url" class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Resource URL</label>
             <input type="url" id="material-url" class="w-full bg-[var(--bg-secondary)] border border-[var(--card-border)] rounded-[var(--border-radius-md)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] transition-colors duration-[var(--transition-fast)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-primary)] focus:shadow-[0_0_0_3px_var(--accent-glow)]" placeholder="Paste YouTube, Google Drive, or Web link here..." />
@@ -178,16 +178,16 @@ try {
       e.preventDefault(); resourceType = 'file';
       tabFileBtn.classList.add('tab-active');
       tabLinkBtn?.classList.remove('tab-active');
-      fileUploadContainer?.classList.remove('hidden');
-      urlShareContainer?.classList.add('hidden');
+      if (fileUploadContainer) fileUploadContainer.style.display = 'flex';
+      if (urlShareContainer) urlShareContainer.style.display = 'none';
     });
 
     tabLinkBtn?.addEventListener('click', (e) => {
       e.preventDefault(); resourceType = 'link';
       tabLinkBtn.classList.add('tab-active');
       tabFileBtn?.classList.remove('tab-active');
-      urlShareContainer?.classList.remove('hidden');
-      fileUploadContainer?.classList.add('hidden');
+      if (urlShareContainer) urlShareContainer.style.display = 'flex';
+      if (fileUploadContainer) fileUploadContainer.style.display = 'none';
     });
 
     const categorySelect = document.getElementById('material-category-select');
@@ -196,8 +196,12 @@ try {
     const newCategoryPreview = document.getElementById('new-category-preview');
 
     categorySelect?.addEventListener('change', () => {
-      if (categorySelect.value === '__new__') { newCategoryGroup?.classList.remove('hidden'); newCategoryGroup?.classList.add('flex'); newCategoryInput?.focus(); }
-      else { newCategoryGroup?.classList.add('hidden'); newCategoryGroup?.classList.remove('flex'); }
+      if (categorySelect.value === '__new__') {
+        if (newCategoryGroup) newCategoryGroup.style.display = 'flex';
+        newCategoryInput?.focus();
+      } else {
+        if (newCategoryGroup) newCategoryGroup.style.display = 'none';
+      }
     });
 
     newCategoryInput?.addEventListener('input', () => {
@@ -258,7 +262,7 @@ try {
         materialTitle.value = cleanName.replace(/[-_]/g, ' ');
       }
       uploadDropzone.classList.add('hidden');
-      uploadProgressCard.classList.remove('hidden');
+      if (uploadProgressCard) uploadProgressCard.style.display = 'flex';
       uploadedFilenameEl.textContent = file.name;
       uploadedFilesizeEl.textContent = formatBytes(file.size);
       setProgress(3);
@@ -289,7 +293,8 @@ try {
       uploadedFileId = null; uploadedFilenameText = ''; uploadedFileMime = '';
       if (uploadProgressFill) { uploadProgressFill.style.width = '0'; uploadProgressFill.style.backgroundColor = ''; }
       if (uploadStatusPercent) uploadStatusPercent.style.color = '';
-      uploadProgressCard?.classList.add('hidden'); uploadDropzone?.classList.remove('hidden');
+      if (uploadProgressCard) uploadProgressCard.style.display = 'none';
+      uploadDropzone?.classList.remove('hidden');
       fileUploaderInput.value = '';
     };
 
