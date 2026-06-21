@@ -1,7 +1,6 @@
 import type { APIRoute } from 'astro';
 import { logActivity } from '../../utils/db';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { FetchHttpHandler } from '@smithy/fetch-http-handler';
+import { s3PutObject, getS3Config } from '../../utils/s3';
 import { env } from 'cloudflare:workers';
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -13,17 +12,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
     }
 
-    const s3Endpoint = env.S3_ENDPOINT_URL;
-    const s3SecretKey = env.S3_SECRET_ACCESS_KEY;
-    const s3AccessKeyId = env.S3_ACCESS_KEY_ID;
-    const s3BucketName = env.S3_BUCKET_NAME;
-    const s3Region = env.S3_REGION_NAME;
-
-    if (!s3Endpoint || !s3SecretKey || !s3AccessKeyId || !s3BucketName) {
-      return new Response(
-        JSON.stringify({ error: 'S3 storage credentials missing in environment.' }),
-        { status: 500 }
-      );
+    if (!env.S3_ENDPOINT_URL || !env.S3_SECRET_ACCESS_KEY || !env.S3_ACCESS_KEY_ID || !env.S3_BUCKET_NAME) {
+      return new Response(JSON.stringify({ error: 'S3 storage credentials missing in environment.' }), { status: 500 });
     }
 
     const formData = await request.formData();
@@ -31,10 +21,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const noteId = formData.get('noteId') as string;
 
     if (!file || !noteId) {
-      return new Response(
-        JSON.stringify({ error: 'File and Note ID are required fields.' }),
-        { status: 400 }
-      );
+      return new Response(JSON.stringify({ error: 'File and Note ID are required fields.' }), { status: 400 });
     }
 
     const note = await db
@@ -50,27 +37,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const fileKey = `users/${user.id}/notes/${noteId}/${attachmentId}-${sanitizedFilename}`;
 
-    const s3 = new S3Client({
-      requestHandler: new FetchHttpHandler(),
-      endpoint: s3Endpoint,
-      region: s3Region,
-      credentials: {
-        accessKeyId: s3AccessKeyId,
-        secretAccessKey: s3SecretKey,
-      },
-      forcePathStyle: true,
-    });
+    const config = getS3Config(env);
+    const fileBuffer = new Uint8Array(await file.arrayBuffer());
 
-    const fileBuffer = await file.arrayBuffer();
+    await s3PutObject(config, fileKey, fileBuffer, file.type || 'application/octet-stream');
 
-    const command = new PutObjectCommand({
-      Bucket: s3BucketName,
-      Key: fileKey,
-      Body: new Uint8Array(fileBuffer),
-      ContentType: file.type,
-    });
-
-    await s3.send(command);
     const now = Date.now();
 
     await db

@@ -2,8 +2,7 @@ import type { APIRoute } from 'astro';
 import { logActivity } from '../../../utils/db';
 import { syncNoteLinks, syncBacklinks } from '../../../utils/links';
 import { env } from 'cloudflare:workers';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { FetchHttpHandler } from '@smithy/fetch-http-handler';
+import { s3DeleteObject, getS3Config } from '../../../utils/s3';
 
 // Helper to sync note tags
 async function syncNoteTags(
@@ -258,27 +257,13 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
     ).results;
 
     if (attachments && attachments.length > 0) {
-      const s3Endpoint = env.S3_ENDPOINT_URL;
-      const s3SecretKey = env.S3_SECRET_ACCESS_KEY;
-      const s3AccessKeyId = env.S3_ACCESS_KEY_ID;
-      const s3BucketName = env.S3_BUCKET_NAME;
-      const s3Region = env.S3_REGION_NAME;
-
-      if (!s3Endpoint || !s3SecretKey || !s3AccessKeyId || !s3BucketName) {
+      if (!env.S3_ENDPOINT_URL || !env.S3_SECRET_ACCESS_KEY || !env.S3_ACCESS_KEY_ID || !env.S3_BUCKET_NAME) {
         console.error('S3 credentials missing for attachment cleanup');
       } else {
-        const s3 = new S3Client({
-          requestHandler: new FetchHttpHandler(),
-          endpoint: s3Endpoint,
-          region: s3Region,
-          credentials: { accessKeyId: s3AccessKeyId, secretAccessKey: s3SecretKey },
-          forcePathStyle: true,
-        });
-
+        const config = getS3Config(env);
         for (const att of attachments) {
           try {
-            const command = new DeleteObjectCommand({ Bucket: s3BucketName, Key: att.r2_key as string });
-            await s3.send(command);
+            await s3DeleteObject(config, att.r2_key as string);
           } catch (e) {
             console.error('Failed to delete file from S3:', att.r2_key, e);
           }
