@@ -123,7 +123,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       </div>
     </BentoCard>
 
-    <div id="note-main-layout" class="grid grid-cols-[8fr_4fr] gap-5 items-start max-lg:grid-cols-1" id="read-pane">
+    <div id="note-main-layout" class="grid grid-cols-[8fr_4fr] gap-5 items-start max-lg:grid-cols-1">
       <BentoCard class="flex flex-col gap-6 !p-8" padding>
         <div class="border-b border-[var(--card-border)] pb-4">
           <h1 id="note-view-title" class="text-[2rem] font-bold tracking-tight mb-3">{note.title}</h1>
@@ -233,35 +233,25 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       </BentoCard>
 
       <div id="side-widgets" class="flex flex-col gap-5">
-        <BentoCard class="flex flex-col gap-5 !p-5 cursor-pointer transition-all duration-[var(--transition-fast)]" id="upload-zone" padding>
-          <div class="border-2 border-dashed border-[var(--card-border)] rounded-[var(--border-radius-md)] py-6 px-4 text-center flex flex-col items-center gap-1.5 relative">
-            <Icon name="upload" size={24} class="text-[var(--text-muted)] mb-1" />
-            <p class="text-sm font-semibold">Drag & Drop Files Here</p>
-            <span class="text-xs text-[var(--text-muted)]">or click to browse</span>
-            <input type="file" id="file-input-field" class="absolute inset-0 opacity-0 cursor-pointer" multiple />
-          </div>
-          <div class="flex flex-col gap-2">
-            <h4 class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">Attachments</h4>
+        {attachments.length > 0 && (
+          <BentoCard class="flex flex-col gap-3 !p-5" padding>
+            <h4 class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Attachments</h4>
             <ul id="attachments-list" class="flex flex-col gap-1.5 list-none">
-              {attachments.length === 0 ? (
-                <li id="empty-att-msg" class="text-sm text-[var(--text-muted)] italic">No files attached yet</li>
-              ) : (
-                attachments.map((att) => (
-                  <li class="attachment-item flex justify-between items-center bg-[var(--bg-secondary)] border border-[var(--card-border)] px-3 py-2 rounded-[var(--border-radius-md)] text-sm" data-att-id={att.id}>
-                    <div class="flex flex-col min-w-0">
-                      <a href={`/api/files/${att.id}`} target="_blank" class="att-name-link font-medium text-[var(--text-secondary)] truncate hover:text-[var(--accent-primary)] no-underline">
-                        <Icon name="paperclip" size={14} class="mr-1.5 text-[var(--text-muted)]" />
-                        <span class="att-filename">{att.filename}</span>
-                      </a>
-                      <span class="text-[0.7rem] text-[var(--text-muted)]">{formatBytes(att.file_size)}</span>
-                    </div>
-                    <button class="delete-att-btn text-lg text-[var(--text-muted)] cursor-pointer px-1 rounded hover:text-[var(--danger)] hover:bg-[var(--bg-tertiary)]" data-att-id={att.id} title="Delete attachment">×</button>
-                  </li>
-                ))
-              )}
+              {attachments.map((att) => (
+                <li class="attachment-item flex justify-between items-center bg-[var(--bg-secondary)] border border-[var(--card-border)] px-3 py-2 rounded-[var(--border-radius-md)] text-sm" data-att-id={att.id}>
+                  <div class="flex flex-col min-w-0">
+                    <a href={`/api/files/${att.id}`} target="_blank" class="att-name-link font-medium text-[var(--text-secondary)] truncate hover:text-[var(--accent-primary)] no-underline">
+                      <Icon name="paperclip" size={14} class="mr-1.5 text-[var(--text-muted)]" />
+                      <span class="att-filename">{att.filename}</span>
+                    </a>
+                    <span class="text-[0.7rem] text-[var(--text-muted)]">{formatBytes(att.file_size)}</span>
+                  </div>
+                  <button class="delete-att-btn text-lg text-[var(--text-muted)] cursor-pointer px-1 rounded hover:text-[var(--danger)] hover:bg-[var(--bg-tertiary)]" data-att-id={att.id} title="Delete attachment">×</button>
+                </li>
+              ))}
             </ul>
-          </div>
-        </BentoCard>
+          </BentoCard>
+        )}
 
         {links.some((l) => l.type === 'youtube') && (
           <BentoCard class="flex flex-col gap-4">
@@ -558,30 +548,6 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       Object.values(playerPromises).forEach((player) => {
         if (player && player.seekTo) player.seekTo(seconds, true);
       });
-    };
-
-    // Upload zone drag-and-drop
-    const uploadZone = document.getElementById('upload-zone');
-    const fileInput = document.getElementById('file-input-field');
-    const attachmentsList = document.getElementById('attachments-list');
-    const emptyAttMsg = document.getElementById('empty-att-msg');
-
-    uploadZone?.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
-    uploadZone?.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
-    uploadZone?.addEventListener('drop', (e) => { e.preventDefault(); uploadZone.classList.remove('dragover'); if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files); });
-    fileInput?.addEventListener('change', () => { if (fileInput.files.length > 0) uploadFiles(fileInput.files); });
-
-    const uploadFiles = async (files) => {
-      for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('noteId', noteId);
-        try {
-          const res = await fetch('/api/upload', { method: 'POST', body: formData });
-          if (res.ok) window.location.reload();
-          else { const data = await res.json(); alert('Upload failed: ' + data.error); }
-        } catch { alert('Upload failed due to connection error'); }
-      }
     };
 
     // Delete individual attachment

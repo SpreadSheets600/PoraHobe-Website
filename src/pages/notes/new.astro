@@ -47,7 +47,7 @@ try {
         <div class="flex flex-col gap-2.5">
           <label class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Select Resource Type</label>
           <div class="flex bg-[var(--bg-secondary)] border border-[var(--card-border)] p-1 rounded-[var(--border-radius-md)] gap-1">
-            <button class="type-tab flex-1 py-2.5 text-sm font-semibold rounded-[var(--border-radius-sm)] cursor-pointer text-[var(--text-secondary)] transition-all duration-[var(--transition-fast)] text-center bg-[var(--card-bg)] text-[var(--text-primary)] shadow-[var(--shadow-sm)]" id="tab-file-btn">
+            <button class="type-tab flex-1 py-2.5 text-sm font-semibold rounded-[var(--border-radius-sm)] cursor-pointer text-[var(--text-secondary)] transition-all duration-[var(--transition-fast)] text-center tab-active" id="tab-file-btn">
               <Icon name="folder" size={14} class="mr-1.5" />
               Upload File (PDF / Image)
             </button>
@@ -302,7 +302,7 @@ try {
       const isPinned = document.getElementById('material-pinned').checked;
 
       if (!title) { alert('Resource Title is required.'); return; }
-      if (resourceType === 'file' && !uploadedFileId) { alert('Please upload a file first.'); return; }
+      if (resourceType === 'file' && !pendingFile) { alert('Please upload a file first.'); return; }
 
       let shareUrl = '';
       if (resourceType === 'link') {
