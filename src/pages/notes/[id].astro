@@ -22,7 +22,6 @@ note.is_favorite = !!note.is_favorite;
 note.is_pinned = !!note.is_pinned;
 
 let tags: string[] = [];
-let attachments: any[] = [];
 let links: any[] = [];
 let incomingBacklinks: any[] = [];
 let relatedNotes: any[] = [];
@@ -31,8 +30,6 @@ let collections: Collection[] = [];
 try {
   const { results: t } = await db.prepare('SELECT t.name FROM note_tags nt JOIN tags t ON nt.tag_id = t.id WHERE nt.note_id = ?').bind(id).all();
   tags = t.map((r: any) => r.name);
-  const { results: a } = await db.prepare('SELECT id, filename, file_size, mime_type, created_at FROM attachments WHERE note_id = ?').bind(id).all();
-  attachments = a;
   const { results: l } = await db.prepare('SELECT id, url, type, title, thumbnail_url, watch_progress FROM links WHERE note_id = ?').bind(id).all();
   links = l;
   const { results: b } = await db.prepare(`SELECT n.id, n.title FROM backlinks b JOIN notes n ON b.source_note_id = n.id WHERE b.target_note_id = ? AND n.user_id = ?`).bind(id, user.id).all();
@@ -44,13 +41,6 @@ try {
   const { results: c } = await db.prepare('SELECT * FROM collections WHERE user_id = ? ORDER BY name ASC').bind(user.id).all<Collection>();
   collections = c;
 } catch (e) { console.error(e); }
-
-const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
 
 function getDriveEmbedUrl(url: string): string | null {
   try {
@@ -73,9 +63,7 @@ function getDriveEmbedUrl(url: string): string | null {
 
 const drivePreviews = links.filter((l) => l.type === 'drive').map((l) => ({ ...l, embedUrl: getDriveEmbedUrl(l.url) }));
 const youtubeVideos = links.filter((l) => l.type === 'youtube');
-const pdfs = attachments.filter((a) => a.mime_type === 'application/pdf');
-const images = attachments.filter((a) => a.mime_type.startsWith('image/'));
-const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length > 0 || drivePreviews.some(d => !!d.embedUrl);
+const hasPreviews = youtubeVideos.length > 0 || drivePreviews.some(d => !!d.embedUrl);
 ---
 
 <Layout title={`${note.title} - PoraHobe`}>
@@ -137,16 +125,6 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
         {hasPreviews && (
           <div class="flex flex-col overflow-hidden border border-[var(--card-border)] bg-[var(--card-bg)] rounded-[var(--border-radius-lg)] mb-6">
             <div class="flex flex-wrap bg-[var(--bg-secondary)] border-b border-[var(--card-border)] px-3 py-1.5 gap-[6.5px]">
-              {pdfs.map((pdf) => (
-                <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="pdf" data-target-id={`pdf-preview-${pdf.id}`}>
-                  <Icon name="file-text" size={14} />{pdf.filename.length > 20 ? pdf.filename.slice(0, 17) + '...' : pdf.filename}
-                </button>
-              ))}
-              {images.map((img) => (
-                <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="image" data-target-id={`image-preview-${img.id}`}>
-                  <Icon name="image" size={14} />{img.filename.length > 20 ? img.filename.slice(0, 17) + '...' : img.filename}
-                </button>
-              ))}
               {youtubeVideos.map((video) => (
                 <button class="preview-tab-btn px-4 py-2 text-sm font-semibold text-[var(--text-secondary)] rounded-[var(--border-radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] border border-transparent inline-flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]" data-tab-type="youtube" data-target-id={`yt-preview-${video.id}`}>
                   <Icon name="video" size={14} />Video Preview
@@ -160,30 +138,6 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
             </div>
 
             <div class="preview-panes">
-              {pdfs.map((pdf) => (
-                <div class="preview-pane-content flex-col w-full" id={`pdf-preview-${pdf.id}`} style="display:none">
-                  <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
-                    <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]">
-                      <Icon name="file-text" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{pdf.filename} ({formatBytes(pdf.file_size)})
-                    </span>
-                    <a href={`/api/files/${pdf.id}`} download class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-semibold text-xs cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Download PDF</a>
-                  </div>
-                  <iframe src={`/api/files/${pdf.id}`} class="w-full h-[680px] border-none bg-[var(--bg-secondary)]" title={pdf.filename}></iframe>
-                </div>
-              ))}
-              {images.map((img) => (
-                <div class="preview-pane-content flex-col w-full" id={`image-preview-${img.id}`} style="display:none">
-                  <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
-                    <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]">
-                      <Icon name="image" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{img.filename} ({formatBytes(img.file_size)})
-                    </span>
-                    <a href={`/api/files/${img.id}`} download class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-semibold text-xs cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Download Image</a>
-                  </div>
-                  <div class="w-full flex justify-center items-center bg-[#0f0f11] p-8 min-h-[350px]">
-                    <img src={`/api/files/${img.id}`} alt={img.filename} class="max-w-full max-h-[600px] rounded-[var(--border-radius-md)] shadow-[0_8px_30px_rgba(0,0,0,0.5)] object-contain" />
-                  </div>
-                </div>
-              ))}
               {youtubeVideos.map((video) => {
                 const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
                 return (
@@ -233,26 +187,6 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       </BentoCard>
 
       <div id="side-widgets" class="flex flex-col gap-5">
-        {attachments.length > 0 && (
-          <BentoCard class="flex flex-col gap-3 !p-5" padding>
-            <h4 class="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Attachments</h4>
-            <ul id="attachments-list" class="flex flex-col gap-1.5 list-none">
-              {attachments.map((att) => (
-                <li class="attachment-item flex justify-between items-center bg-[var(--bg-secondary)] border border-[var(--card-border)] px-3 py-2 rounded-[var(--border-radius-md)] text-sm" data-att-id={att.id}>
-                  <div class="flex flex-col min-w-0">
-                    <a href={`/api/files/${att.id}`} target="_blank" class="att-name-link font-medium text-[var(--text-secondary)] truncate hover:text-[var(--accent-primary)] no-underline">
-                      <Icon name="paperclip" size={14} class="mr-1.5 text-[var(--text-muted)]" />
-                      <span class="att-filename">{att.filename}</span>
-                    </a>
-                    <span class="text-[0.7rem] text-[var(--text-muted)]">{formatBytes(att.file_size)}</span>
-                  </div>
-                  <button class="delete-att-btn text-lg text-[var(--text-muted)] cursor-pointer px-1 rounded hover:text-[var(--danger)] hover:bg-[var(--bg-tertiary)]" data-att-id={att.id} title="Delete attachment">×</button>
-                </li>
-              ))}
-            </ul>
-          </BentoCard>
-        )}
-
         {links.some((l) => l.type === 'youtube') && (
           <BentoCard class="flex flex-col gap-4">
             <h3 class="text-sm font-semibold text-[var(--text-primary)]">YouTube Video Resources</h3>
@@ -488,7 +422,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
 
     const deleteNoteBtn = document.getElementById('delete-note-btn');
     deleteNoteBtn?.addEventListener('click', async () => {
-      if (confirm('Are you sure you want to delete this note and ALL its attached files?')) {
+      if (confirm('Are you sure you want to delete this note?')) {
         try {
           const res = await fetch(`/api/notes/${noteId}`, { method: 'DELETE' });
           if (res.ok) window.location.href = '/notes';
@@ -550,20 +484,5 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       });
     };
 
-    // Delete individual attachment
-    document.querySelectorAll('.delete-att-btn').forEach((btn) => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const attId = btn.dataset.attId;
-        if (!attId) return;
-        if (confirm('Delete this attachment from storage?')) {
-          try {
-            const res = await fetch(`/api/files/${attId}`, { method: 'DELETE' });
-            if (res.ok) window.location.reload();
-            else alert('Failed to delete attachment');
-          } catch { alert('An error occurred'); }
-        }
-      });
-    });
   </script>
 </Layout>
