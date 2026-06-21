@@ -123,7 +123,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       </div>
     </BentoCard>
 
-    <div id="note-main-layout" class="grid grid-cols-[8fr_4fr] gap-5 items-start max-lg:grid-cols-1">
+    <div id="note-main-layout" class="grid grid-cols-[8fr_4fr] gap-5 items-start max-lg:grid-cols-1" id="read-pane">
       <BentoCard class="flex flex-col gap-6 !p-8" padding>
         <div class="border-b border-[var(--card-border)] pb-4">
           <h1 id="note-view-title" class="text-[2rem] font-bold tracking-tight mb-3">{note.title}</h1>
@@ -161,7 +161,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
 
             <div class="preview-panes">
               {pdfs.map((pdf) => (
-                <div class="preview-pane-content hidden flex flex-col w-full" id={`pdf-preview-${pdf.id}`}>
+                <div class="preview-pane-content flex-col w-full" id={`pdf-preview-${pdf.id}`} style="display:none">
                   <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
                     <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]">
                       <Icon name="file-text" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{pdf.filename} ({formatBytes(pdf.file_size)})
@@ -172,7 +172,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
                 </div>
               ))}
               {images.map((img) => (
-                <div class="preview-pane-content hidden flex flex-col w-full" id={`image-preview-${img.id}`}>
+                <div class="preview-pane-content flex-col w-full" id={`image-preview-${img.id}`} style="display:none">
                   <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
                     <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]">
                       <Icon name="image" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{img.filename} ({formatBytes(img.file_size)})
@@ -187,7 +187,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
               {youtubeVideos.map((video) => {
                 const videoId = video.thumbnail_url?.split('/vi/')[1]?.split('/')[0] || '';
                 return (
-                  <div class="preview-pane-content hidden flex flex-col w-full" id={`yt-preview-${video.id}`}>
+                  <div class="preview-pane-content flex-col w-full" id={`yt-preview-${video.id}`} style="display:none">
                     <div class="youtube-player-container-main w-full bg-black" data-video-id={videoId} data-link-id={video.id} data-progress={video.watch_progress || 0}>
                       <div class="relative aspect-video w-full bg-black">
                         <div id={`yt-player-main-${video.id}`} class="absolute inset-0 w-full h-full border-none"></div>
@@ -201,7 +201,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
                 );
               })}
               {drivePreviews.filter(d => d.embedUrl).map((drive) => (
-                <div class="preview-pane-content hidden flex flex-col w-full" id={`drive-preview-${drive.id}`}>
+                <div class="preview-pane-content flex-col w-full" id={`drive-preview-${drive.id}`} style="display:none">
                   <div class="flex justify-between items-center px-6 py-3 bg-[var(--bg-primary)] border-b border-[var(--card-border)]">
                     <span class="font-semibold text-sm text-[var(--text-primary)] truncate max-w-[70%]"><Icon name="folder" size={16} class="mr-1.5 text-[var(--accent-primary)]" />{drive.title || 'Google Drive File'}</span>
                     <a href={drive.url} target="_blank" class="inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-[var(--border-radius-md)] font-semibold text-xs cursor-pointer border border-[var(--card-border)] transition-all duration-[var(--transition-fast)] bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-muted)] hover:text-[var(--text-primary)]">Open Drive ↗</a>
@@ -324,7 +324,7 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
       </div>
     </div>
 
-    <div id="edit-pane" class="hidden flex flex-col gap-5">
+    <div id="edit-pane" class="flex-col gap-5" style="display:none">
       <BentoCard class="flex flex-col gap-5 !p-8">
         <input type="text" id="edit-title-input" value={note.title} class="text-[1.75rem] font-bold border-b border-[var(--card-border)] pb-2 w-full text-[var(--text-primary)] bg-transparent outline-none" />
         <div class="grid grid-cols-4 max-md:grid-cols-2 gap-3">
@@ -363,7 +363,6 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
     @media (max-width: 1024px) { #note-view-wrapper.editing #note-main-layout { grid-template-columns: 1fr; } }
     #note-view-wrapper.editing #side-widgets { display: none; }
     .preview-tab-btn.active { background: var(--card-bg); color: var(--accent-primary); border-color: var(--card-border); box-shadow: var(--shadow-sm); }
-    .preview-pane-content.hidden { display: none; }
     .math-display { margin: 1.5em 0; overflow-x: auto; padding: 10px; background: var(--bg-secondary); border-radius: var(--border-radius-md); text-align: center; }
     .math-inline { padding: 0 4px; }
   </style>
@@ -371,7 +370,6 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
   <script>
     const noteViewWrapper = document.getElementById('note-view-wrapper');
     const noteId = noteViewWrapper?.dataset.noteId;
-    const readPane = document.getElementById('read-pane');
     const editPane = document.getElementById('edit-pane');
     const editModeBtn = document.getElementById('edit-mode-btn');
     const cancelEditBtn = document.getElementById('cancel-edit-btn');
@@ -410,14 +408,20 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
     if (previewTabs.length > 0) {
       previewTabs[0].classList.add('active');
       const firstTargetId = previewTabs[0].dataset.targetId;
-      if (firstTargetId) document.getElementById(firstTargetId)?.classList.remove('hidden');
+      if (firstTargetId) {
+        const firstPane = document.getElementById(firstTargetId);
+        if (firstPane) firstPane.style.display = 'flex';
+      }
       previewTabs.forEach((tab) => {
         tab.addEventListener('click', () => {
           previewTabs.forEach((t) => t.classList.remove('active'));
-          previewPanes.forEach((p) => p.classList.add('hidden'));
+          previewPanes.forEach((p) => { (p as HTMLElement).style.display = 'none'; });
           tab.classList.add('active');
           const targetId = tab.dataset.targetId;
-          if (targetId) document.getElementById(targetId)?.classList.remove('hidden');
+          if (targetId) {
+            const pane = document.getElementById(targetId);
+            if (pane) pane.style.display = 'flex';
+          }
         });
       });
     }
@@ -426,14 +430,14 @@ const hasPreviews = pdfs.length > 0 || images.length > 0 || youtubeVideos.length
 
     editModeBtn?.addEventListener('click', () => {
       const isEditing = noteViewWrapper.classList.toggle('editing');
-      editPane?.classList.toggle('hidden');
-      if (isEditing) { editModeBtn.classList.add('active'); editContentInput.focus(); }
+      if (editPane) editPane.style.display = isEditing ? 'flex' : 'none';
+      if (isEditing) { editModeBtn.classList.add('active'); editContentInput?.focus(); }
       else editModeBtn.classList.remove('active');
     });
 
     cancelEditBtn?.addEventListener('click', () => {
       noteViewWrapper.classList.remove('editing');
-      editPane?.classList.add('hidden');
+      if (editPane) editPane.style.display = 'none';
       editModeBtn?.classList.remove('active');
       if (editTitleInput) editTitleInput.value = viewTitleText?.textContent || '';
     });
